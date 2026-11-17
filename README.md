@@ -1,115 +1,160 @@
-# SIMPRESMA — Sistem Informasi Prestasi Mahasiswa
+# SIMPRESMA — Sistem Informasi Manajemen Prestasi Mahasiswa
+Fakultas Ilmu Komputer, Universitas Jember
 
-SIMPRESMA adalah aplikasi frontend untuk pengelolaan pengajuan prestasi mahasiswa dan proses konversi prestasi menjadi mata kuliah/SKS. Antarmuka dibuat dengan Laravel sebagai fondasi aplikasi dan React + TypeScript untuk halaman interaktif.
+SIMPRESMA adalah platform sistem informasi terpadu untuk pengajuan capaian prestasi mahasiswa, verifikasi berjenjang oleh dosen verifikator, konversi prestasi menjadi mata kuliah/SKS oleh Kaprodi, validasi berkas SK oleh Tendik, serta monitoring eksekutif oleh Wakil Dekan.
 
-## Fitur berdasarkan role
+Dibangun dengan arsitektur **Laravel 12** (PHP ^8.2) sebagai backend REST API & database engine, serta **React 19 + TypeScript + Vite + Tailwind CSS v4** pada antarmuka frontend.
 
-- **Mahasiswa** — mengisi pengajuan prestasi, melengkapi dokumen pendukung, melihat riwayat/status, serta melihat detail pengajuan dan konversi mata kuliah.
-- **Verifikator** — meninjau pengajuan, memeriksa dokumen, memberikan persetujuan atau penolakan beserta alasan, serta mengelola data/matriks konversi.
-- **Tendik** — melihat detail konversi secara read-only, memantau status SK, dan memilih berkas SK final dalam format PDF.
-- **Wadek** — memantau pengajuan lintas program studi, melihat rekap prestasi dan konversi, serta mengakses pelaporan.
-- **Kaprodi** — memantau prestasi dan rekap pada program studi terkait, melihat performa, dan mengakses pelaporan.
+---
 
-Fitur dan hak akses yang tersedia mengikuti implementasi frontend pada repositori ini.
+## 📋 Prasyarat Sistem (Prerequisites)
 
-## Teknologi
+Sebelum menginstal, pastikan komputer/laptop telah terpasang:
+1. **PHP >= 8.2** (bisa melalui [XAMPP](https://www.apachefriends.org/) versi terbaru atau installer standalone) dengan ekstensi aktif:
+   - `pdo_mysql`, `mbstring`, `openssl`, `fileinfo`, `gd`, `zip`, `curl`
+2. **Composer >= 2.x** ([Download Composer](https://getcomposer.org/download/))
+3. **Node.js >= 18.x** dan **npm** ([Download Node.js](https://nodejs.org/))
+4. **MySQL / MariaDB** (bisa melalui XAMPP MySQL)
+5. **Git** ([Download Git](https://git-scm.com/))
 
-- Laravel
-- React
-- TypeScript
-- Vite
-- Tailwind CSS
-- React Router
-- npm
+---
 
-## Persyaratan
+## 🚀 Panduan Instalasi Lengkap (Step-by-Step)
 
-- PHP dan Composer sesuai versi Laravel yang digunakan proyek.
-- Node.js dan npm.
-- Dependensi PHP dan JavaScript terpasang.
-
-## Menjalankan aplikasi
-
-1. Buka terminal pada direktori proyek.
-2. Pasang dependensi PHP:
-
-   ```bash
-   composer install
-   ```
-
-3. Salin konfigurasi lingkungan jika `.env` belum tersedia:
-
-   ```bash
-   cp .env.example .env
-   ```
-
-   Pada Windows, file `.env.example` juga dapat disalin secara manual menjadi `.env`.
-
-4. Buat application key:
-
-   ```bash
-   php artisan key:generate
-   ```
-
-5. Atur konfigurasi database pada `.env` bila aplikasi menggunakan database lokal, kemudian jalankan migrasi bila diperlukan:
-
-   ```bash
-   php artisan migrate
-   ```
-
-6. Pasang dependensi frontend:
-
-   ```bash
-   npm install
-   ```
-
-7. Jalankan server Laravel di terminal pertama:
-
-   ```bash
-   php artisan serve
-   ```
-
-8. Jalankan Vite di terminal kedua:
-
-   ```bash
-   npm run dev
-   ```
-
-9. Buka alamat lokal yang ditampilkan oleh Laravel/Vite.
-
-## Build frontend
-
-Untuk membuat build frontend:
-
+### 1. Clone / Download Repositori
+Buka terminal (Git Bash, Command Prompt, atau PowerShell) di direktori kerja Anda:
 ```bash
-npm run build
+git clone https://github.com/iannnub/simfe.git
+cd simfe
 ```
+*(Atau jika mendownload file ZIP dari GitHub, ekstrak folder ZIP tersebut lalu buka foldernya di terminal/VS Code).*
 
-Untuk menjalankan pemeriksaan lint jika script tersedia di `package.json`:
+---
 
+### 2. Pasang Dependensi Backend (PHP / Composer)
 ```bash
-npm run lint
+composer install
 ```
 
-## Struktur direktori penting
+---
 
-```text
-resources/
-└── js/
-    └── react/
-        ├── components/   # Komponen antarmuka yang digunakan ulang
-        ├── context/      # Context aplikasi
-        ├── layout/       # Layout, header, dan sidebar
-        └── pages/
-            └── Simpresma/ # Halaman dan fitur SIMPRESMA
-routes/                    # Route Laravel
-public/                    # Aset publik
+### 3. Buat File Konfigurasi Lingkungan (`.env`)
+Salin file konfigurasi `.env.example` menjadi `.env`:
+- **Windows (Command Prompt / PowerShell):**
+  ```cmd
+  copy .env.example .env
+  ```
+- **Linux / Git Bash / macOS:**
+  ```bash
+  cp .env.example .env
+  ```
+
+Lalu generate Application Encryption Key:
+```bash
+php artisan key:generate
 ```
 
-## Catatan implementasi
+---
 
-- Sejumlah alur pada frontend menggunakan data contoh dan `localStorage` untuk mendukung demonstrasi interaksi antarmuka.
-- Pastikan konfigurasi backend, autentikasi, database, dan layanan eksternal disesuaikan dengan lingkungan pengembangan sebelum digunakan sebagai aplikasi produksi.
-- Jangan memasukkan kredensial atau token rahasia ke repositori.
+### 4. Setup Database MySQL
 
-# simfe
+Pastikan MySQL di **XAMPP Control Panel** sudah dalam status **Start / Running**.
+
+Buka phpMyAdmin (`http://localhost/phpmyadmin`) atau terminal MySQL, lalu buat database baru:
+```sql
+CREATE DATABASE simpresma;
+```
+
+Pilih **salah satu** dari 2 cara pengisian database di bawah:
+
+#### Opsi A: Import Langsung File `.sql` (Rekomendasi & Paling Cepat)
+File dump SQL lengkap sudah tersedia di dalam folder repositori: `database/simpresma.sql`.
+- Buka phpMyAdmin -> klik database `simpresma` -> pilih tab **Import** -> pilih file `database/simpresma.sql` -> klik **Import/Go**.
+- **ATAU** melalui terminal:
+  ```bash
+  mysql -u root simpresma < database/simpresma.sql
+  ```
+
+#### Opsi B: Menggunakan Migration & Seeder Laravel
+Jalankan perintah migration Laravel berikut:
+```bash
+php artisan migrate:fresh --seed
+```
+
+---
+
+### 5. Buat Folder Penyimpanan & Symbolic Link Storage
+Pastikan folder storage dan symbolic link file bukti sertifikat terhubung:
+```bash
+php artisan storage:link
+```
+
+---
+
+### 6. Pasang Dependensi Frontend (Node.js / npm)
+```bash
+npm install
+```
+
+---
+
+### 7. Menjalankan Aplikasi
+
+Buka **2 terminal terpisah** di direktori proyek:
+
+#### Terminal 1: Jalankan Backend Laravel
+```bash
+php artisan serve --port=8000
+```
+*(Server backend akan berjalan di `http://127.0.0.1:8000`)*
+
+#### Terminal 2: Jalankan Frontend Vite (Hot Reload)
+```bash
+npm run dev
+```
+*(Vite development server akan berjalan di `http://localhost:5173` atau terintegrasi langsung dengan `http://127.0.0.1:8000`)*
+
+> **Catatan Produksi / Standalone:**  
+> Anda juga dapat menjalankan `npm run build` sekali saja, kemudian cukup menjalankan `php artisan serve`. Seluruh tampilan React akan disajikan langsung secara otomatis melalui `http://127.0.0.1:8000`.
+
+---
+
+## 🔑 Akun Login Demo (Tersedia Otomatis)
+
+Semua akun default menggunakan password: `password`
+
+| Peran (Role) | Email / Username | NIM / NIP | Akses Fitur Utama |
+| :--- | :--- | :--- | :--- |
+| **Mahasiswa** | `mahasiswa@fasilkom.unej.ac.id` | `242410101079` | Dashboard Mahasiswa, Form Multi-Step Pengajuan Prestasi, Riwayat Prestasi |
+| **Verifikator** | `verifikator@fasilkom.unej.ac.id` | `NIP.10004` | Verifikasi Pengajuan (Menunggu, Disetujui, Ditolak), Matriks Konversi |
+| **Tendik** | `tendik@fasilkom.unej.ac.id` | `NIP.20002` | Validasi Final Dokumen, Upload & Download SK Prestasi, Export Rekap Excel/PDF |
+| **Wadek (Admin)** | `wadek@fasilkom.unej.ac.id` | `NIP.99002` | Dashboard Eksekutif Fakultas, Rekap Lintas Prodi, Manajemen Master Data & Akun |
+| **Kaprodi SI** | `kaprodi.si@fasilkom.unej.ac.id` | `NIP.40001` | Monitoring Capaian Mahasiswa Prodi, Konversi SKS Mata Kuliah |
+
+---
+
+## 🛠️ Perintah Tambahan / Troubleshooting
+
+- **Jika tampilan blank atau aset Vite tidak muncul:**
+  ```bash
+  npm run build
+  ```
+- **Jika muncul error sesi atau cache konfigurasi:**
+  ```bash
+  php artisan config:clear
+  php artisan route:clear
+  php artisan cache:clear
+  ```
+- **Menjalankan Automated Unit & Feature Test:**
+  ```bash
+  php artisan test
+  ```
+- **Menjalankan Linter & Typecheck:**
+  ```bash
+  npm run lint
+  npx tsc --noEmit
+  ```
+
+---
+
+© 2026 Fakultas Ilmu Komputer Universitas Jember — SIMPRESMA
