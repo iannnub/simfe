@@ -23,6 +23,17 @@ export function WadekMonitoring() {
   return (
     <>
       <Title title="Peninjauan Prestasi" description="Melihat seluruh pengajuan prestasi lintas program studi secara read-only tanpa hak menyetujui atau menolak." />
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row">
+        <div className="flex-1">
+          <SearchFilter value={q} onChange={setQ} />
+        </div>
+        <DropdownSelect
+          value={prodi}
+          onChange={setProdi}
+          options={[{ value: "", label: "Seluruh Program Studi" }, ...prodiOptions.map((p) => ({ value: p, label: p }))]}
+          className="w-full sm:w-60"
+        />
+      </div>
       <Card className="p-5"><PrestasiTable data={rows} action={(r) => <button onClick={() => setSelected(r)} className="rounded-lg bg-warning-400 px-3 py-2 text-sm font-medium text-white hover:bg-warning-500">Lihat Detail</button>} /></Card>
       <ReadOnlyPrestasiModal row={selected} onClose={() => setSelected(null)} />
     </>
@@ -76,5 +87,3 @@ export function WadekPelaporan() {
   const rows = data.filter((r) => !prodi || r.prodi === prodi);
   return <><Title title="Pelaporan Excel" description="Ekspor data capaian mahasiswa on-demand dengan cakupan seluruh atau sebagian program studi." /><Card className="p-6"><DropdownSelect value={prodi} onChange={setProdi} options={[{ value: "", label: "Seluruh Program Studi" }, ...prodiOptions.map((p) => ({ value: p, label: p }))]} className="w-auto min-w-[200px]" /><p className="mt-4 text-sm text-gray-500">{prodi ? `Cakupan: ${prodi}` : "Cakupan: seluruh program studi"}</p><button onClick={()=>exportExcel(rows, `Laporan_SIMPRESMA_${prodi ? prodi.replace(/\s+/g,"_") : "Semua_Prodi"}.xls`)} className="mt-5 rounded-lg bg-brand-500 px-5 py-2.5 text-sm font-medium text-white">Convert to Excel</button></Card></>;
 }
-
-function Stat({ label, value }: { label: string; value: number | string }) { return <div className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900"><p className="text-sm text-gray-500">{label}</p><p className="mt-2 text-2xl font-bold text-gray-800 dark:text-white/90">{value}</p></div>; }

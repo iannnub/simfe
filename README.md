@@ -111,3 +111,5 @@ public/                    # Aset publik
 - Sejumlah alur pada frontend menggunakan data contoh dan `localStorage` untuk mendukung demonstrasi interaksi antarmuka.
 - Pastikan konfigurasi backend, autentikasi, database, dan layanan eksternal disesuaikan dengan lingkungan pengembangan sebelum digunakan sebagai aplikasi produksi.
 - Jangan memasukkan kredensial atau token rahasia ke repositori.
+
+# simfe

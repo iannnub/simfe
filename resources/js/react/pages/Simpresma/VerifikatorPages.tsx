@@ -8,12 +8,9 @@ import {
   Prestasi,
   PrestasiTable,
   SearchFilter,
-  Section,
-  StatusBadge,
   Textarea,
   Title,
   usePrestasi,
-  prodiOptions,
   FlashMessage,
 } from "./SimpresmaShared";
 
@@ -43,7 +40,6 @@ function VerificationList({
   const { data, update } = usePrestasi();
 
   const [q, setQ] = useState("");
-  const [prodi, setProdi] = useState("");
   const [selected, setSelected] = useState<Prestasi | null>(null);
   const [feedback, setFeedback] = useState("");
   const [bidang, setBidang] = useState("");
@@ -165,6 +161,9 @@ function VerificationList({
         }
       />
 
+      <div className="mb-4">
+        <SearchFilter value={q} onChange={setQ} />
+      </div>
 
       <Card className="p-5">
         <PrestasiTable

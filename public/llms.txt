@@ -1,0 +1,24 @@
+# SIMPRESMA - Sistem Informasi Prestasi Mahasiswa Fasilkom Universitas Jember
+
+> SIMPRESMA adalah platform digital manajemen prestasi mahasiswa Fakultas Ilmu Komputer (Fasilkom) Universitas Jember (UNEJ) untuk pencatatan, verifikasi, rekognisi, dan konversi SKS prestasi lomba akademik maupun non-akademik.
+
+## Informasi Utama
+- **Instansi**: Fakultas Ilmu Komputer, Universitas Jember
+- **Arsitektur**: Laravel 11 (Backend RESTful API & Sanctum) + React 19 + TypeScript + TailAdmin + Tailwind CSS
+- **Autentikasi**: Single Sign-On (SSO GAPURA UNEJ) & Laravel Sanctum Token Bearer
+
+## Role & Hak Akses (RBAC)
+1. **Mahasiswa**: Mengajukan prestasi, mengunggah bukti/sertifikat/poster/surat tugas, memantau status validasi, memilih mata kuliah konversi SKS, mengunduh SK Konversi resmi.
+2. **Dosen Verifikator**: Meninjau pengajuan berdasarkan Program Studi (Sistem Informasi, Teknologi Informasi, Informatika), memeriksa bukti prestasi, menentukan kelayakan bidang lomba, menyetujui, meminta perbaikan, atau menolak pengajuan.
+3. **Tendik (Tenaga Kependidikan)**: Memantau pengajuan yang telah disetujui verifikator, memproses pengesahan pimpinan, mengunggah Surat Keputusan (SK) Dekan resmi berformat PDF.
+4. **Wadek (Wakil Dekan) / Superadmin**: Monitoring dashboard eksekutif lintas program studi, rekapitulasi data capaian, audit log, manajemen hak akses pengguna (RBAC), pengaturan master data matriks konversi SKS.
+5. **Kaprodi (Ketua Program Studi)**: Monitoring khusus program studi (read-only), review pengajuan mahasiswa prodi, pemantauan performa verifikator, ekspor laporan capaian akreditasi per prodi.
+
+## Standar & Aturan Konversi
+- **Tingkatan Lomba**: Internasional, Nasional Kementerian (Gemastik, LIDM, Satria Data, NUDC, KDMI, MTQMN, PKM, P2MW, PPK Ormawa, Pilmapres, Peksiminas), Nasional Non-Kementerian, Wilayah/Regional/Provinsi, Promahadesa.
+- **Tahapan**: Pemenang (Juara 1/2/3/Honorable Mention), Finalis, Lolos Tahap Awal, Mendaftar.
+- **Hasil Konversi**: Nilai A/B/C dan rentang 2–6 SKS untuk mata kuliah relevan sesuai matriks program studi.
+
+## Kontak & Tautan
+- Website Resmi: https://fasilkom.unej.ac.id
+- Dokumentasi API: /api/v1

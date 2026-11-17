@@ -17,11 +17,11 @@ export default function AuthLayout({
             <GridShape />
 
             <div className="relative z-10 flex flex-col items-center max-w-xs">
-            <a href="/" className="mb-4 block">
+            <Link to="/" className="mb-4 block">
                 <h1 className="text-center text-white text-3xl font-bold">
                 SIMPRESMA
                 </h1>
-            </a>
+            </Link>
 
             <p className="text-center text-gray-400 dark:text-white/60">
                 Manajemen Prestasi Mahasiswa Fasilkom Universitas Jember

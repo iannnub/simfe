@@ -1,7 +1,6 @@
-import { useMemo, useState } from "react";
-import { Card, PrestasiTable, SearchFilter, StatusBadge, TablePagination, Title, StatCard, usePrestasi, prodiOptions, ReadOnlyPrestasiModal } from "./SimpresmaShared";
+import { useState } from "react";
+import { Card, PrestasiTable, SearchFilter, StatusBadge, TablePagination, Title, StatCard, usePrestasi, ReadOnlyPrestasiModal } from "./SimpresmaShared";
 import { loadActiveAccount } from "./SimpresmaMockAccess";
-import { loadMatrixRows } from "./SimpresmaMatrix";
 import { useNavigate } from "react-router";
 
 function scopeProdi() {
@@ -28,11 +27,16 @@ export function KaprodiDashboard() {
   const accepted = rows.filter((r) => r.status === "Diterima").length;
   const converted = rows.filter((r) => r.status === "Terkonversi").length;
   const rejected = rows.filter((r) => r.status === "Ditolak").length;
-  const total = Math.max(1, rows.length);
+  const safeTotal = Math.max(1, rows.length);
+  const C = 251.327;
+  const s1 = ((pending / safeTotal) * 100 / 100) * C;
+  const s2 = ((accepted / safeTotal) * 100 / 100) * C;
+  const s3 = ((converted / safeTotal) * 100 / 100) * C;
+  const s4 = ((rejected / safeTotal) * 100 / 100) * C;
 
   return (
     <div className="space-y-6">
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-700 via-brand-600 to-theme-purple-500 px-6 py-7 text-white shadow-theme-md sm:px-8">
+      <div className="relative overflow-hidden rounded-2xl bg-brand-600 border border-brand-500/20 px-6 py-7 text-white shadow-theme-md sm:px-8">
         <div className="relative z-10 max-w-3xl">
           <span className="inline-flex rounded-full bg-white/15 px-3 py-1 text-xs font-medium ring-1 ring-white/20">Portal Kaprodi</span>
           <h1 className="mt-3 text-2xl font-bold sm:text-3xl">Dashboard Kaprodi</h1>
@@ -42,7 +46,6 @@ export function KaprodiDashboard() {
           <div className="text-2xl font-bold">{rows.length}</div>
           <div className="text-xs text-white/80">Total Pengajuan Prodi</div>
         </div>
-        <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/10" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -57,8 +60,15 @@ export function KaprodiDashboard() {
           <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Distribusi Status Prestasi</h3>
           <p className="mt-1 text-sm text-gray-500">Komposisi status pengajuan pada {prodi}.</p>
           <div className="mt-7 flex flex-col items-center gap-7 sm:flex-row sm:justify-center">
-            <div className="relative flex h-40 w-40 shrink-0 items-center justify-center rounded-full" style={{ background: `conic-gradient(#f79009 0 ${(pending/total)*100}%, #12b76a ${(pending/total)*100}% ${((pending+accepted)/total)*100}%, #465fff ${((pending+accepted)/total)*100}% ${((pending+accepted+converted)/total)*100}%, #f04438 ${((pending+accepted+converted)/total)*100}% 100%)` }}>
-              <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white dark:bg-gray-900">
+            <div className="relative flex h-40 w-40 shrink-0 items-center justify-center">
+              <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="40" fill="transparent" stroke="#e5e7eb" strokeWidth="12" className="dark:stroke-gray-800" />
+                <circle cx="50" cy="50" r="40" fill="transparent" stroke="#f79009" strokeWidth="12" strokeDasharray={`${s1} ${C - s1}`} strokeDashoffset="0" />
+                <circle cx="50" cy="50" r="40" fill="transparent" stroke="#12b76a" strokeWidth="12" strokeDasharray={`${s2} ${C - s2}`} strokeDashoffset={`${-s1}`} />
+                <circle cx="50" cy="50" r="40" fill="transparent" stroke="#465fff" strokeWidth="12" strokeDasharray={`${s3} ${C - s3}`} strokeDashoffset={`${-(s1 + s2)}`} />
+                <circle cx="50" cy="50" r="40" fill="transparent" stroke="#f04438" strokeWidth="12" strokeDasharray={`${s4} ${C - s4}`} strokeDashoffset={`${-(s1 + s2 + s3)}`} />
+              </svg>
+              <div className="absolute flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white shadow-theme-xs dark:bg-gray-900">
                 <span className="text-2xl font-bold text-gray-800 dark:text-white/90">{rows.length}</span>
                 <span className="text-[11px] text-gray-500">Pengajuan</span>
               </div>
@@ -109,6 +119,9 @@ export function KaprodiMonitoring() {
   return (
     <>
       <Title title="Peninjauan Prestasi" description={`Melihat seluruh pengajuan prestasi ${prodi} secara read-only tanpa hak menyetujui atau menolak.`} />
+      <div className="mb-4">
+        <SearchFilter value={q} onChange={setQ} />
+      </div>
       <Card className="p-5"><PrestasiTable data={rows} action={(r) => <button className="rounded-lg bg-warning-400 px-3 py-2 text-sm font-medium text-white hover:bg-warning-500" onClick={() => setSelected(r)}>Lihat Detail</button>} /></Card>
       <ReadOnlyPrestasiModal row={selected} onClose={() => setSelected(null)} />
     </>
@@ -158,6 +171,4 @@ export function KaprodiPelaporan() {
   const rows = data.filter((r) => r.prodi === scopeProdi());
   return <><Title title="Pelaporan Excel" description={`Ekspor data capaian mahasiswa khusus ${scopeProdi()}.`} /><Card className="p-6"><p className="text-sm text-gray-500">Laporan dibuat on-demand berdasarkan data frontend saat tombol ditekan.</p><button onClick={()=>exportExcel(rows, `Laporan_SIMPRESMA_${scopeProdi().replace(/\s+/g,"_")}.xls`)} className="mt-5 rounded-lg bg-brand-500 px-5 py-2.5 text-sm font-medium text-white">Convert to Excel</button></Card></>;
 }
-
-function Stat({ label, value }: { label: string; value: number | string }) { return <div className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900"><p className="text-sm text-gray-500">{label}</p><p className="mt-2 text-2xl font-bold text-gray-800 dark:text-white/90">{value}</p></div>; }
 

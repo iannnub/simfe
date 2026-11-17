@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import api from "../../services/api";
 import {
   Account,
   loadManagedAccounts,
@@ -30,10 +31,20 @@ export default function MockAccess() {
 
   const selected = accounts.find((account) => account.email === selectedEmail) ?? accounts[0];
 
-  const enterSystem = () => {
+  const [isLoading, setIsLoading] = useState(false);
+
+  const enterSystem = async () => {
     if (!selected) return;
-    saveActiveAccount(selected, selected.roles[0]);
-    navigate(rolePath[selected.roles[0]]);
+    setIsLoading(true);
+    try {
+      await api.auth.login(selected.email, "password");
+    } catch (e) {
+      console.warn("Backend auth failed or offline, falling back to mock session:", e);
+    } finally {
+      setIsLoading(false);
+      saveActiveAccount(selected, selected.roles[0]);
+      navigate(rolePath[selected.roles[0]]);
+    }
   };
 
   return (
@@ -63,7 +74,14 @@ export default function MockAccess() {
           ))}
         </div>
 
-        <button type="button" onClick={enterSystem} className="mt-6 w-full rounded-lg bg-brand-500 px-4 py-3 text-sm font-medium text-white hover:bg-brand-600">Masuk ke SIMPRESMA</button>
+        <button
+          type="button"
+          disabled={isLoading}
+          onClick={enterSystem}
+          className="mt-6 w-full rounded-lg bg-brand-500 px-4 py-3 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50"
+        >
+          {isLoading ? "Menghubungkan..." : "Masuk ke SIMPRESMA"}
+        </button>
       </div>
     </div>
   );

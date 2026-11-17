@@ -1,27 +1,27 @@
 import React, { useMemo, useState } from "react";
 import {
-  AlertHexaIcon,
-  GroupIcon,
-  EnvelopeIcon,
-  ArrowRightIcon,
-  UserIcon
-} from "../../icons";
-import {
   Card,
   PrestasiTable,
   SearchFilter,
-  StatusBadge,
   Title,
-  Textarea,
   Input,
   usePrestasi,
-  prodiOptions,
-  getStatusLabel,
   FlashMessage,
 } from "./SimpresmaShared";
 import { loadBidangMapping } from "./SimpresmaMatrix";
 
-function downloadMockSK(row: any) {
+interface DownloadablePrestasi {
+  mahasiswa: string;
+  nim: string;
+  prodi: string;
+  lomba: string;
+  mataKuliah?: string[];
+  nilai?: string[];
+  status?: string;
+  skUploaded?: boolean;
+}
+
+function downloadMockSK(row: DownloadablePrestasi) {
   const lines = ["SURAT KEPUTUSAN KONVERSI PRESTASI MAHASISWA", `Nama: ${row.mahasiswa}`, `NIM: ${row.nim}`, `Program Studi: ${row.prodi}`, `Prestasi: ${row.lomba}`, `Mata Kuliah: ${(row.mataKuliah ?? []).join(", ")}`, `Nilai: ${(row.nilai ?? []).join(", ")}`, "Dokumen ini merupakan simulasi frontend SIMPRESMA."];
   const escapePdf = (text: string) => text.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
   const stream = ["BT", "/F1 11 Tf", "50 760 Td", ...lines.map((line, i) => `${i ? "0 -24 Td " : ""}(${escapePdf(line)}) Tj`), "ET"].join("\n");
@@ -69,7 +69,9 @@ export function MahasiswaRiwayat() {
     try {
       const parsed = JSON.parse(raw);
       if (parsed?.message) setFlash(parsed);
-    } catch {}
+    } catch {
+      // Ignored non-json flash storage
+    }
     localStorage.removeItem("simpresma_flash");
   }, []);
 
@@ -105,7 +107,7 @@ export function MahasiswaRiwayat() {
   const selectedTotalSks = selectedMatkul.reduce((total, course) => total + getCourseCredits(course), 0);
   const selectedRange = getSksRange(selectedRow?.sks);
   const remainingSks = Math.max(0, selectedRange.max - selectedTotalSks);
-  const actionFor = (r: any) => {
+  const actionFor = (r: { status: string; skUploaded?: boolean }) => {
     if (r.status === "Diterima") return "Pilih Matkul";
     if (r.status === "Terkonversi" && r.skUploaded) return "Unduh SK";
     return "Lihat Detail";
@@ -156,6 +158,10 @@ export function MahasiswaRiwayat() {
           </div>
         </div>
       </Card>
+
+      <div className="mb-4">
+        <SearchFilter value={q} onChange={setQ} />
+      </div>
 
       <Card className="mb-4 max-w-max p-2">
         <div className="flex flex-wrap items-center gap-2 justify-start">

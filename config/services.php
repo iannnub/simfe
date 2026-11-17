@@ -15,11 +15,11 @@ return [
     */
 
     'postmark' => [
-        'token' => env('POSTMARK_TOKEN'),
+        'key' => env('POSTMARK_API_KEY'),
     ],
 
     'resend' => [
-        'key' => env('RESEND_KEY'),
+        'key' => env('RESEND_API_KEY'),
     ],
 
     'ses' => [
@@ -33,6 +33,20 @@ return [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
+    ],
+
+    'telegram' => [
+        'bot_token'    => env('TELEGRAM_BOT_TOKEN'),
+        'bot_username' => env('TELEGRAM_BOT_USERNAME', 'simpresma_unej_bot'),
+    ],
+
+    'gapura' => [
+        'url'                 => env('GAPURA_URL', 'https://gapura.unej.ac.id'),
+        'client_id'           => env('GAPURA_CLIENT_ID'),
+        'client_secret'       => env('GAPURA_CLIENT_SECRET'),
+        'redirect_uri'        => env('GAPURA_REDIRECT_URI', 'http://localhost:8000/api/auth/gapura/callback'),
+        'frontend_url'        => env('GAPURA_FRONTEND_CALLBACK_URL', 'http://localhost:5173/auth/callback'),
+        'logout_redirect_uri' => env('GAPURA_LOGOUT_REDIRECT_URI', 'http://localhost:5173/'),
     ],
 
 ];

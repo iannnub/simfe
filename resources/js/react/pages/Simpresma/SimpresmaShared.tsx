@@ -1,6 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import DropdownSelect from "../../components/form/DropdownSelect";
 import { useNavigate } from "react-router";
+import api, { getToken } from "../../services/api";
+import { loadActiveAccount } from "./SimpresmaMockAccess";
 import {
   AlertIcon,
   AngleLeftIcon,
@@ -271,6 +273,72 @@ const studentDemoPrestasi: Prestasi[] = [
   },
 ];
 
+export interface BackendPengajuanItem {
+  id: number;
+  nama_lomba?: string;
+  nama_tim?: string;
+  status?: string;
+  created_at?: string;
+  feedback_verifikator?: string;
+  link_sk_konversi?: string;
+  link_sertifikat?: string;
+  link_surat_tugas_mahasiswa?: string;
+  link_surat_tugas_dosen?: string;
+  link_poster?: string;
+  snapshot_huruf_nilai?: string;
+  snapshot_min_sks?: number | string;
+  snapshot_max_sks?: number | string;
+  mahasiswa?: { nama?: string; name?: string; nim_nip?: string };
+  prodi?: { nama?: string };
+  bidang?: { nama?: string };
+  tingkatan?: { nama?: string };
+  tahapan?: { nama?: string };
+  pengajuan_mata_kuliahs?: Array<{ mata_kuliah?: { nama_mk?: string }; nama_mk?: string }>;
+}
+
+export function mapBackendPengajuanToPrestasi(item: BackendPengajuanItem): Prestasi {
+  const statusMap: Record<string, Status> = {
+    pending: "Pending",
+    diterima: "Diterima",
+    ditolak: "Ditolak",
+    selesai: "Terkonversi",
+  };
+  return {
+    id: item.id,
+    mahasiswa: item.mahasiswa?.nama || item.mahasiswa?.name || "Mahasiswa",
+    nim: item.mahasiswa?.nim_nip || "-",
+    prodi: (item.prodi?.nama || "Sistem Informasi") as Prodi,
+    lomba: item.nama_lomba || "-",
+    bidang: item.bidang?.nama || "-",
+    tingkatan: item.tingkatan?.nama || "-",
+    tahapan: item.tahapan?.nama || "-",
+    jenis: item.nama_tim ? "Kelompok" : "Individu",
+    status: statusMap[item.status?.toLowerCase() || ""] || "Pending",
+    tanggal: item.created_at
+      ? new Date(item.created_at).toLocaleDateString("id-ID", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })
+      : "-",
+    feedback: item.feedback_verifikator,
+    skDisahkan: item.status?.toLowerCase() === "selesai",
+    skUploaded: Boolean(item.link_sk_konversi),
+    skFileName: item.link_sk_konversi ? "SK_Konversi_Resmi.pdf" : undefined,
+    dokumen: [
+      item.link_sertifikat && "Sertifikat_Lomba.pdf",
+      item.link_surat_tugas_mahasiswa && "Surat_Tugas_Mahasiswa.pdf",
+      item.link_surat_tugas_dosen && "Surat_Tugas_Dosen.pdf",
+      item.link_poster && "Poster_Lomba.pdf",
+    ].filter(Boolean) as string[],
+    mataKuliah: Array.isArray(item.pengajuan_mata_kuliahs)
+      ? (item.pengajuan_mata_kuliahs.map((pmk) => pmk.mata_kuliah?.nama_mk || pmk.nama_mk).filter(Boolean) as string[])
+      : [],
+    nilai: item.snapshot_huruf_nilai ? [item.snapshot_huruf_nilai] : [],
+    sks: item.snapshot_min_sks ? `${item.snapshot_min_sks}–${item.snapshot_max_sks}` : undefined,
+  };
+}
+
 export function usePrestasi() {
   const [data, setData] = useState<Prestasi[]>(() => {
     try {
@@ -289,6 +357,44 @@ export function usePrestasi() {
     }
   });
 
+  // Fetch real data from backend API if authenticated
+  useEffect(() => {
+    const fetchBackend = async () => {
+      const token = getToken();
+      if (!token) return;
+      try {
+        const active = loadActiveAccount();
+        const role = active?.activeRole || active?.roles?.[0];
+        let res: { data?: { items?: BackendPengajuanItem[] } | BackendPengajuanItem[] } | undefined;
+        if (role === "Mahasiswa") {
+          res = await api.mahasiswa.getPengajuan({ per_page: 50 });
+        } else if (role === "Verifikator") {
+          res = await api.verifikator.getPengajuan({ per_page: 50 });
+        } else if (role === "Tendik") {
+          res = await api.tendik.getPengajuan({ per_page: 50 });
+        } else if (role === "Kaprodi") {
+          res = await api.kaprodi.getPengajuan({ per_page: 50 });
+        } else {
+          res = await api.tendik.getPengajuan({ per_page: 50 });
+        }
+
+        const rawData = res?.data;
+        const items = Array.isArray(rawData) ? rawData : rawData?.items;
+        if (Array.isArray(items) && items.length > 0) {
+          const mapped = items.map(mapBackendPengajuanToPrestasi);
+          setData((prev) => {
+            const apiIds = new Set(mapped.map((m) => m.id));
+            const localOnly = prev.filter((p) => !apiIds.has(p.id));
+            return [...mapped, ...localOnly];
+          });
+        }
+      } catch {
+        // Silent fallback to local storage
+      }
+    };
+    fetchBackend();
+  }, []);
+
   useEffect(() => {
     localStorage.setItem(
       "simpresma_prestasi",
@@ -306,7 +412,9 @@ export function usePrestasi() {
         if (s) {
           setData(JSON.parse(s));
         }
-      } catch {}
+      } catch {
+        // Ignored storage parse error
+      }
     };
 
     window.addEventListener("simpresma:update", h);
@@ -315,7 +423,7 @@ export function usePrestasi() {
       window.removeEventListener("simpresma:update", h);
   }, []);
 
-  const update = (id: number, patch: Partial<Prestasi>) =>
+  const update = (id: number, patch: Partial<Prestasi>) => {
     setData((prev) =>
       prev.map((x) => {
         if (x.id !== id) return x;
@@ -335,6 +443,17 @@ export function usePrestasi() {
         return { ...x, ...patch, ...(history ? { history } : {}) };
       })
     );
+
+    // Call backend API in background if authenticated
+    const token = getToken();
+    if (token) {
+      if (patch.status === "Diterima") {
+        api.verifikator.terima(id, patch.feedback).catch(() => {});
+      } else if (patch.status === "Ditolak") {
+        api.verifikator.tolak(id, patch.feedback || "Ditolak").catch(() => {});
+      }
+    }
+  };
 
   const add = (item: Prestasi) => {
     const withHistory = item.history?.length
@@ -890,11 +1009,15 @@ export function PrestasiTable({
 }
 
 export function SearchFilter({
-  placeholder = "Cari...",
+  value,
+  onChange,
+  placeholder = "Cari pengajuan, nama, atau lomba...",
   filters,
   filterValues,
   onFilterChange,
 }: {
+  value?: string;
+  onChange?: (val: string) => void;
   placeholder?: string;
   filters?: {
     label: string;
@@ -904,23 +1027,41 @@ export function SearchFilter({
   onFilterChange?: (label: string, value: string) => void;
 }) {
   return (
-    <Card className="mb-6 p-5">
-      <div className="flex w-full flex-row flex-wrap items-center justify-between gap-3">
-        {filters &&
-          filters.map((f) => (
-            <DropdownSelect
-              key={f.label}
-              value={filterValues?.[f.label] || ""}
-              onChange={(nextValue) => onFilterChange?.(f.label, nextValue)}
-              options={[
-                { value: "", label: `Semua ${f.label}` },
-                ...f.options.map((o) => ({ value: o, label: o })),
-              ]}
-              className="min-w-[160px]"
-            />
-          ))}
-      </div>
-    </Card>
+    <div className="flex w-full flex-row flex-wrap items-center gap-3">
+      {onChange !== undefined && (
+        <div className="relative min-w-[240px] flex-1">
+          <input
+            type="text"
+            value={value || ""}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-4 pr-10 text-sm text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 dark:border-gray-800 dark:bg-gray-900 dark:text-white dark:placeholder:text-gray-500"
+          />
+          {value && (
+            <button
+              type="button"
+              onClick={() => onChange("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
+      {filters &&
+        filters.map((f) => (
+          <DropdownSelect
+            key={f.label}
+            value={filterValues?.[f.label] || ""}
+            onChange={(nextValue) => onFilterChange?.(f.label, nextValue)}
+            options={[
+              { value: "", label: `Semua ${f.label}` },
+              ...f.options.map((o) => ({ value: o, label: o })),
+            ]}
+            className="min-w-[160px]"
+          />
+        ))}
+    </div>
   );
 }
 
@@ -1033,7 +1174,7 @@ const viewAllRoute: Record<typeof role, string> = {
   return (
     <div className="space-y-6">
       {/* Hero */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-600 via-brand-500 to-blue-light-500 px-6 py-7 text-white shadow-theme-md sm:px-8">
+      <div className="relative overflow-hidden rounded-2xl bg-brand-600 border border-brand-500/20 px-6 py-7 text-white shadow-theme-md sm:px-8">
         <div className="relative z-10 max-w-3xl">
           <span className="inline-flex rounded-full bg-white/15 px-3 py-1 text-xs font-medium ring-1 ring-white/20">
             {cfg.eyebrow}
@@ -1048,8 +1189,6 @@ const viewAllRoute: Record<typeof role, string> = {
         >
           {cfg.action}
         </button>
-        <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-white/10" />
-        <div className="absolute -bottom-28 right-20 h-64 w-64 rounded-full bg-white/10" />
       </div>
 
       {/* Stats */}
@@ -1077,13 +1216,15 @@ const viewAllRoute: Record<typeof role, string> = {
           </div>
 
           <div className="mt-7 flex flex-col items-center gap-7 sm:flex-row sm:justify-center">
-            <div
-              className="relative flex h-40 w-40 shrink-0 items-center justify-center rounded-full"
-              style={{
-                background: `conic-gradient(#f79009 0 ${pendingPct}%, #12b76a ${pendingPct}% ${pendingPct + acceptedPct}%, #465fff ${pendingPct + acceptedPct}% ${pendingPct + acceptedPct + convertedPct}%, #f04438 ${pendingPct + acceptedPct + convertedPct}% 100%)`,
-              }}
-            >
-              <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white dark:bg-gray-900">
+            <div className="relative flex h-40 w-40 shrink-0 items-center justify-center">
+              <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100">
+                <circle cx="50" cy="50" r="40" fill="transparent" stroke="#e5e7eb" strokeWidth="12" className="dark:stroke-gray-800" />
+                <circle cx="50" cy="50" r="40" fill="transparent" stroke="#f79009" strokeWidth="12" strokeDasharray={`${(pendingPct / 100) * 251.327} ${251.327 - (pendingPct / 100) * 251.327}`} strokeDashoffset="0" />
+                <circle cx="50" cy="50" r="40" fill="transparent" stroke="#12b76a" strokeWidth="12" strokeDasharray={`${(acceptedPct / 100) * 251.327} ${251.327 - (acceptedPct / 100) * 251.327}`} strokeDashoffset={`${-((pendingPct / 100) * 251.327)}`} />
+                <circle cx="50" cy="50" r="40" fill="transparent" stroke="#465fff" strokeWidth="12" strokeDasharray={`${(convertedPct / 100) * 251.327} ${251.327 - (convertedPct / 100) * 251.327}`} strokeDashoffset={`${-(((pendingPct + acceptedPct) / 100) * 251.327)}`} />
+                <circle cx="50" cy="50" r="40" fill="transparent" stroke="#f04438" strokeWidth="12" strokeDasharray={`${(Math.max(0, 100 - pendingPct - acceptedPct - convertedPct) / 100) * 251.327} ${251.327}`} strokeDashoffset={`${-(((pendingPct + acceptedPct + convertedPct) / 100) * 251.327)}`} />
+              </svg>
+              <div className="absolute flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white shadow-theme-xs dark:bg-gray-900">
                 <span className="text-2xl font-bold text-gray-800 dark:text-white/90">{data.length}</span>
                 <span className="text-[11px] text-gray-500">Pengajuan</span>
               </div>
@@ -1144,11 +1285,14 @@ const viewAllRoute: Record<typeof role, string> = {
               </div>
 
               <div className="mt-7 flex flex-col items-center gap-7 sm:flex-row sm:justify-center">
-                <div
-                  className="relative flex h-40 w-40 shrink-0 items-center justify-center rounded-full"
-                  style={{ background: "conic-gradient(#465fff 0 62%, #7a5af8 62% 82%, #12b76a 82% 100%)" }}
-                >
-                  <div className="flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white dark:bg-gray-900">
+                <div className="relative flex h-40 w-40 shrink-0 items-center justify-center">
+                  <svg className="h-full w-full -rotate-90" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="40" fill="transparent" stroke="#e5e7eb" strokeWidth="12" className="dark:stroke-gray-800" />
+                    <circle cx="50" cy="50" r="40" fill="transparent" stroke="#465fff" strokeWidth="12" strokeDasharray={`${(62 / 100) * 251.327} ${251.327}`} strokeDashoffset="0" />
+                    <circle cx="50" cy="50" r="40" fill="transparent" stroke="#7a5af8" strokeWidth="12" strokeDasharray={`${(20 / 100) * 251.327} ${251.327}`} strokeDashoffset={`${-((62 / 100) * 251.327)}`} />
+                    <circle cx="50" cy="50" r="40" fill="transparent" stroke="#12b76a" strokeWidth="12" strokeDasharray={`${(18 / 100) * 251.327} ${251.327}`} strokeDashoffset={`${-((82 / 100) * 251.327)}`} />
+                  </svg>
+                  <div className="absolute flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white shadow-theme-xs dark:bg-gray-900">
                     <span className="text-2xl font-bold text-gray-800 dark:text-white/90">100%</span>
                     <span className="text-[11px] text-gray-500">Distribusi</span>
                   </div>

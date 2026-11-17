@@ -1,6 +1,6 @@
 import React, { useRef, useState } from "react";
 import { masterCoursesByProdi } from "./SimpresmaMatrix";
-import { Card, Input, PrestasiTable, SearchFilter, StatusBadge, Title, usePrestasi, FlashMessage } from "./SimpresmaShared";
+import { Card, Input, PrestasiTable, SearchFilter, Title, usePrestasi, FlashMessage } from "./SimpresmaShared";
 
 export function TendikDataPrestasi() {
   const { data, update } = usePrestasi();
@@ -44,6 +44,9 @@ export function TendikDataPrestasi() {
     <>
       {flash && <FlashMessage type={flash.type} message={flash.message} onClose={() => setFlash(null)} />}
       <Title title="Pengajuan & Upload SK" description="Tendik hanya melihat detail konversi secara read-only dan mengunggah SK final yang telah ditandatangani Dekan di luar sistem." />
+      <div className="mb-4">
+        <SearchFilter value={q} onChange={setQ} />
+      </div>
       <Card className="p-5">
         <PrestasiTable
           data={rows}

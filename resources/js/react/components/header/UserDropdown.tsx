@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { Dropdown } from "../ui/dropdown/Dropdown";
-import { Link, useNavigate, useLocation } from "react-router";
+import { useNavigate, useLocation } from "react-router";
+import api, { removeToken } from "../../services/api";
+import { loadActiveAccount } from "../../pages/Simpresma/SimpresmaMockAccess";
 
 export default function UserDropdown() {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
+  const activeAccount = loadActiveAccount();
 
   const location = useLocation();
   const role = location.pathname.startsWith("/verifikator") ? "Verifikator"
@@ -24,8 +27,10 @@ const profilPath = {
 
   const logout = () => {
     localStorage.removeItem("simpresma_mock_account");
+    removeToken();
+    api.auth.logout().catch(() => {});
     setIsOpen(false);
-    navigate("/mock-access", { replace: true });
+    navigate("/signin", { replace: true });
   };
 
   function toggleDropdown() {
@@ -45,7 +50,7 @@ const profilPath = {
           <img src="/images/user/owner.jpg" alt="User" />
         </span>
 
-        <span className="block mr-1 font-medium text-theme-sm">Lian</span>
+        <span className="block mr-1 font-medium text-theme-sm">{activeAccount?.name || "Civitas FASILKOM"}</span>
         <svg
           className={`stroke-gray-500 dark:stroke-gray-400 transition-transform duration-200 ${
             isOpen ? "rotate-180" : ""

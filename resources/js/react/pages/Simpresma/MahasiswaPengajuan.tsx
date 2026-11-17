@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import DropdownSelect from "../../components/form/DropdownSelect";
 import { useNavigate } from "react-router";
+import api, { getToken } from "../../services/api";
 import { FlashMessage, usePrestasi } from "./SimpresmaShared";
 
 function FileField({
@@ -91,6 +92,7 @@ export default function MahasiswaPengajuan() {
   const [namaLomba, setNamaLomba] = useState("");
   const [tingkatan, setTingkatan] = useState("");
   const [tahapan, setTahapan] = useState("");
+  const [semester, setSemester] = useState("4");
   const [suratTugasMahasiswa, setSuratTugasMahasiswa] = useState<"" | "Ada" | "Tidak">("");
   const [suratTugasDosen, setSuratTugasDosen] = useState<"" | "Ada" | "Tidak">("");
   const [certificate, setCertificate] = useState("");
@@ -136,7 +138,7 @@ export default function MahasiswaPengajuan() {
 
   const validate = () => {
     setShowValidation(true);
-    if (!namaLomba.trim() || !whatsapp.trim() || !socialLink.trim() || !tingkatan || !tahapan) {
+    if (!namaLomba.trim() || !whatsapp.trim() || !socialLink.trim() || !tingkatan || !tahapan || !semester) {
       setStep(1);
       showFlash("error", "Lengkapi data informasi lomba yang wajib diisi.");
       return false;
@@ -157,9 +159,30 @@ export default function MahasiswaPengajuan() {
     if (validate()) setShowConfirm(true);
   };
 
-  const confirmSubmit = () => {
+  const confirmSubmit = async () => {
     setSubmitLoading(true);
     try {
+      if (getToken()) {
+        try {
+          await api.mahasiswa.storePengajuan({
+            nama_lomba: namaLomba,
+            bidang_id: 1,
+            tingkatan_id: 1,
+            tahapan_id: 3,
+            semester: parseInt(semester, 10) || 4,
+            nama_tim: namaTim || null,
+            no_whatsapp: whatsapp,
+            link_sosmed: socialLink.startsWith("http") ? socialLink : `https://${socialLink}`,
+            link_sertifikat: "https://storage.unej.ac.id/simpresma/sertifikat.pdf",
+            link_poster: "https://storage.unej.ac.id/simpresma/poster.jpg",
+            link_surat_tugas_mahasiswa: "https://storage.unej.ac.id/simpresma/surat_tugas_mhs.pdf",
+            link_surat_tugas_dosen: "https://storage.unej.ac.id/simpresma/surat_tugas_dosen.pdf",
+          });
+        } catch (apiErr) {
+          console.warn("Backend API sync warning:", apiErr);
+        }
+      }
+
       const nextId = data.reduce((max, item) => Math.max(max, item.id), 0) + 1;
       add({
         id: nextId,
@@ -227,6 +250,7 @@ export default function MahasiswaPengajuan() {
           <div><label className="mb-2 block text-sm font-semibold text-gray-800 dark:text-gray-200">Link Sosial Media Lomba<span className="text-error-500">*</span></label><input className={inputClass} value={socialLink} onChange={(e) => setSocialLink(e.target.value)} placeholder="https://instagram.com/..." /></div>
           <div><label className="mb-2 block text-sm font-semibold text-gray-800 dark:text-gray-200">Tingkatan Lomba / Kompetisi<span className="text-error-500">*</span></label><DropdownSelect value={tingkatan} onChange={setTingkatan} placeholder="Pilih..." options={[{value:"",label:"Pilih..."},{value:"Internasional",label:"Internasional"},{value:"Nasional Kementerian (Gemastik, LIDM, Satria Data, NUDC, KDMI, MTQMN)",label:"Nasional Kementerian (Gemastik, LIDM, Satria Data, NUDC, KDMI, MTQMN)"},{value:"Nasional Kementerian (PKM, P2MW, PPK Ormawa, Pilmapres, Peksiminas)",label:"Nasional Kementerian (PKM, P2MW, PPK Ormawa, Pilmapres, Peksiminas)"},{value:"Nasional Non Kementerian-Mandiri",label:"Nasional Non Kementerian / Mandiri"},{value:"Wilayah-Regional-Provinsi",label:"Wilayah / Regional / Provinsi"},{value:"Promahadesa",label:"Promahadesa"}]} /><RequiredError show={showValidation && !tingkatan} /></div>
           <div><label className="mb-2 block text-sm font-semibold text-gray-800 dark:text-gray-200">Tahapan Saat Ini<span className="text-error-500">*</span></label><DropdownSelect value={tahapan} onChange={setTahapan} placeholder="Pilih..." options={[{value:"",label:"Pilih..."},{value:"Mendaftar",label:"Mendaftar"},{value:"Lolos Tahap Awal",label:"Lolos Tahap Awal"},{value:"Finalis",label:"Finalis"},{value:"Pemenang (Juara 1/2/3/Honorable Mention)",label:"Pemenang (Juara 1/2/3/Honorable Mention)"}]} /><RequiredError show={showValidation && !tahapan} /></div>
+          <div><label className="mb-2 block text-sm font-semibold text-gray-800 dark:text-gray-200">Semester Saat Ini<span className="text-error-500">*</span></label><DropdownSelect value={semester} onChange={setSemester} placeholder="Pilih..." options={[{value:"1",label:"Semester 1"},{value:"2",label:"Semester 2"},{value:"3",label:"Semester 3"},{value:"4",label:"Semester 4"},{value:"5",label:"Semester 5"},{value:"6",label:"Semester 6"},{value:"7",label:"Semester 7"},{value:"8",label:"Semester 8"}]} /><RequiredError show={showValidation && !semester} /></div>
         </div>
       </div>}
 
@@ -246,9 +270,9 @@ export default function MahasiswaPengajuan() {
         <div className="border-b border-gray-100 px-5 py-4 dark:border-gray-800 sm:px-6"><h2 className="text-xl font-semibold text-gray-800 dark:text-white/90">Review & Submit</h2><p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Pastikan seluruh data dan dokumen sudah benar sebelum dikirim.</p></div>
         <div className="p-5 sm:p-6">
           <div className="grid grid-cols-1 gap-x-8 gap-y-3 md:grid-cols-2">
-            {[["Nama Mahasiswa","Chelsea Brilliant Syah Putra"],["NIM","242410101079"],["Program Studi","Sistem Informasi"],["Nama Lomba",namaLomba||"-"],["Nama Tim",namaTim||"-"],["No WhatsApp",whatsapp||"-"],["Link Sosmed",socialLink||"-"],["Tingkatan",tingkatan||"-"],["Tahapan",tahapan||"-"]].map(([label,value])=><div key={label} className="flex gap-3 text-sm"><span className="w-36 shrink-0 font-semibold text-gray-800 dark:text-gray-200">{label}</span><span className="break-words text-gray-600 dark:text-gray-400">{value}</span></div>)}
+            {[["Nama Mahasiswa","Chelsea Brilliant Syah Putra"],["NIM","242410101079"],["Program Studi","Sistem Informasi"],["Semester",`Semester ${semester}`],["Nama Lomba",namaLomba||"-"],["Nama Tim",namaTim||"-"],["No WhatsApp",whatsapp||"-"],["Link Sosmed",socialLink||"-"],["Tingkatan",tingkatan||"-"],["Tahapan",tahapan||"-"]].map(([label,value])=><div key={label} className="flex gap-3 text-sm"><span className="w-36 shrink-0 font-semibold text-gray-800 dark:text-gray-200">{label}</span><span className="break-words text-gray-600 dark:text-gray-400">{value}</span></div>)}
           </div>
-          <div className="mt-6"><h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Dokumen</h3><div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">{documents.map((doc)=><UploadedDocument key={doc.key} label={doc.label} name={doc.name || "Belum diunggah"} url={doc.url} onRemove={()=>doc.setter("")} onPreview={()=>doc.url && setPreviewDoc(doc.url)} />)}</div></div>
+          <div className="mt-6"><h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Dokumen</h3><div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">{documents.map((doc)=><UploadedDocument key={doc.key} label={doc.label} name={doc.name || "Belum diunggah"} url={doc.url} onRemove={()=>removeFile(doc.key, doc.setter)} onPreview={()=>doc.url && setPreviewDoc(doc.url)} />)}</div></div>
         </div>
       </div>}
 

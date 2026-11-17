@@ -94,6 +94,9 @@ export default function WadekAccessManagement() {
     <>
       <Toast toast={toast} />
       <Title title="Manajemen Hak Akses" description="Wadek sebagai Superadmin memberikan atau mencabut role Verifikator, Tendik, dan Kaprodi." />
+      <div className="mb-4">
+        <SearchFilter value={q} onChange={setQ} />
+      </div>
       <Card className="p-5">
         <div className="mt-5 overflow-x-auto no-scrollbar">
           <table className="simpresma-table min-w-full text-left text-sm">
