@@ -22,14 +22,17 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('user_id');
             $table->unsignedTinyInteger('prodi_id');
-            $table->unsignedBigInteger('assigned_by');
+            $table->unsignedBigInteger('assigned_by')->nullable();
             $table->tinyInteger('is_active')->default(1);
             $table->timestamps();
 
+            $table->index('user_id');
+            $table->index('prodi_id');
+            $table->index('assigned_by');
             $table->unique(['user_id', 'prodi_id']);
             $table->foreign('user_id')->references('id')->on('users')->cascadeOnDelete();
-            $table->foreign('prodi_id')->references('id')->on('prodi');
-            $table->foreign('assigned_by')->references('id')->on('users');
+            $table->foreign('prodi_id')->references('id')->on('prodi')->cascadeOnDelete();
+            $table->foreign('assigned_by')->references('id')->on('users')->nullOnDelete();
         });
 
         Schema::create('tingkatan_lomba', function (Blueprint $table) {

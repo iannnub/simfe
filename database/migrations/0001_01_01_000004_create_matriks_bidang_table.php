@@ -10,13 +10,13 @@ return new class extends Migration
     {
         Schema::create('matriks_konversi', function (Blueprint $table) {
             $table->id();
-            $table->unsignedTinyInteger('tingkatan_id');
-            $table->unsignedTinyInteger('tahapan_id');
+            $table->unsignedTinyInteger('tingkatan_id')->index();
+            $table->unsignedTinyInteger('tahapan_id')->index();
             $table->unsignedTinyInteger('min_sks')->nullable();
             $table->unsignedTinyInteger('max_sks')->nullable();
             $table->string('huruf_nilai', 5)->nullable();
             $table->tinyInteger('is_active')->default(1);
-            $table->unsignedBigInteger('updated_by')->nullable();
+            $table->unsignedBigInteger('updated_by')->nullable()->index();
             $table->timestamps();
 
             $table->unique(['tingkatan_id', 'tahapan_id'], 'uq_matriks');
@@ -35,7 +35,7 @@ return new class extends Migration
 
         Schema::create('mata_kuliah', function (Blueprint $table) {
             $table->id();
-            $table->unsignedTinyInteger('prodi_id');
+            $table->unsignedTinyInteger('prodi_id')->index();
             $table->string('kode_mk', 20);
             $table->string('nama_mk', 200);
             $table->unsignedTinyInteger('sks');
@@ -49,8 +49,8 @@ return new class extends Migration
 
         Schema::create('bidang_mata_kuliah', function (Blueprint $table) {
             $table->id();
-            $table->unsignedSmallInteger('bidang_id');
-            $table->unsignedBigInteger('mata_kuliah_id');
+            $table->unsignedSmallInteger('bidang_id')->index();
+            $table->unsignedBigInteger('mata_kuliah_id')->index();
             $table->tinyInteger('is_active')->default(1);
             $table->timestamps();
 
