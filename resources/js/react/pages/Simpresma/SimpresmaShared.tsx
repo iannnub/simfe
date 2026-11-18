@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import DropdownSelect from "../../components/form/DropdownSelect";
 import { useNavigate } from "react-router";
 import api, { getToken } from "../../services/api";
-import { loadActiveAccount } from "./SimpresmaMockAccess";
+import { loadActiveAccount, loadProfileForRole } from "./SimpresmaMockAccess";
 import {
   AlertIcon,
   AngleLeftIcon,
@@ -43,7 +43,9 @@ export type Prestasi = {
   skDisahkan?: boolean;
   skUploaded?: boolean;
   skFileName?: string;
+  skUrl?: string;
   dokumen?: string[];
+  dokumenUrls?: Record<string, string>;
   mataKuliah?: string[];
   nilai?: string[];
   sks?: string;
@@ -325,12 +327,19 @@ export function mapBackendPengajuanToPrestasi(item: BackendPengajuanItem): Prest
     skDisahkan: item.status?.toLowerCase() === "selesai",
     skUploaded: Boolean(item.link_sk_konversi),
     skFileName: item.link_sk_konversi ? "SK_Konversi_Resmi.pdf" : undefined,
+    skUrl: item.link_sk_konversi || undefined,
     dokumen: [
       item.link_sertifikat && "Sertifikat_Lomba.pdf",
       item.link_surat_tugas_mahasiswa && "Surat_Tugas_Mahasiswa.pdf",
       item.link_surat_tugas_dosen && "Surat_Tugas_Dosen.pdf",
       item.link_poster && "Poster_Lomba.pdf",
     ].filter(Boolean) as string[],
+    dokumenUrls: {
+      ...(item.link_sertifikat ? { "Sertifikat_Lomba.pdf": item.link_sertifikat } : {}),
+      ...(item.link_surat_tugas_mahasiswa ? { "Surat_Tugas_Mahasiswa.pdf": item.link_surat_tugas_mahasiswa } : {}),
+      ...(item.link_surat_tugas_dosen ? { "Surat_Tugas_Dosen.pdf": item.link_surat_tugas_dosen } : {}),
+      ...(item.link_poster ? { "Poster_Lomba.pdf": item.link_poster } : {}),
+    },
     mataKuliah: Array.isArray(item.pengajuan_mata_kuliahs)
       ? (item.pengajuan_mata_kuliahs.map((pmk) => pmk.mata_kuliah?.nama_mk || pmk.nama_mk).filter(Boolean) as string[])
       : [],
@@ -344,10 +353,10 @@ export function usePrestasi() {
     try {
       const s = localStorage.getItem("simpresma_prestasi");
 
-      if (!s) return [...defaultPrestasi, ...sprint2DemoPrestasi];
+      if (!s) return [...defaultPrestasi, ...sprint2DemoPrestasi, ...studentDemoPrestasi];
 
       const parsed = JSON.parse(s);
-      if (!Array.isArray(parsed)) return [...defaultPrestasi, ...sprint2DemoPrestasi];
+      if (!Array.isArray(parsed)) return [...defaultPrestasi, ...sprint2DemoPrestasi, ...studentDemoPrestasi];
 
       const existingIds = new Set(parsed.map((item: Prestasi) => item.id));
       const missingDemo = [...sprint2DemoPrestasi, ...studentDemoPrestasi].filter((item) => !existingIds.has(item.id));
@@ -372,10 +381,10 @@ export function usePrestasi() {
           res = await api.verifikator.getPengajuan({ per_page: 50 });
         } else if (role === "Tendik") {
           res = await api.tendik.getPengajuan({ per_page: 50 });
-        } else if (role === "Kaprodi") {
+        } else if (role === "Kaprodi" || role === "Wadek") {
           res = await api.kaprodi.getPengajuan({ per_page: 50 });
         } else {
-          res = await api.tendik.getPengajuan({ per_page: 50 });
+          res = await api.mahasiswa.getPengajuan({ per_page: 50 });
         }
 
         const rawData = res?.data;
@@ -586,9 +595,6 @@ export function ReadOnlyPrestasiModal({
         "Surat Tugas Dosen Pembimbing.pdf",
         "Poster Lomba.pdf",
       ];
-  const previewUrl = previewDoc
-    ? `data:application/pdf,${encodeURIComponent(`Preview PDF simulasi frontend SIMPRESMA\n${previewDoc}`)}`
-    : null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-slate-950/45 p-4 backdrop-blur-sm">
@@ -626,7 +632,7 @@ export function ReadOnlyPrestasiModal({
 
         <div className="mt-6 rounded-xl border border-gray-200 p-4 dark:border-gray-800">
           <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Dokumen Pendukung</p>
-          <p className="mt-1 text-xs text-gray-500">Dokumen dapat dipratinjau langsung tanpa mengubah data pengajuan.</p>
+          <p className="mt-1 text-xs text-gray-500">Dokumen PDF dapat dipratinjau langsung tanpa mengubah data pengajuan.</p>
           <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
             {documents.map((doc) => (
               <button key={doc} type="button" onClick={() => setPreviewDoc(doc)} className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3 text-left text-sm transition hover:border-brand-300 dark:border-gray-700 dark:hover:border-brand-500">
@@ -634,21 +640,374 @@ export function ReadOnlyPrestasiModal({
                 <span className="ml-3 shrink-0 font-medium text-brand-500">Preview</span>
               </button>
             ))}
+            {row.skUploaded && (
+              <button
+                type="button"
+                onClick={() => setPreviewDoc(row.skFileName || "SK_Konversi_Resmi.pdf")}
+                className="flex items-center justify-between rounded-lg border border-success-200 bg-success-50/50 px-4 py-3 text-left text-sm transition hover:border-success-400 dark:border-success-800 dark:bg-success-900/10"
+              >
+                <span className="min-w-0 truncate font-medium text-success-700 dark:text-success-300">{row.skFileName || "SK_Konversi_Resmi.pdf"}</span>
+                <span className="ml-3 shrink-0 font-medium text-success-600 dark:text-success-400">Preview SK</span>
+              </button>
+            )}
           </div>
           {previewDoc && (
-            <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
-              <div className="flex items-center justify-between bg-gray-50 px-4 py-3 dark:bg-gray-800">
-                <span className="truncate text-sm font-medium text-gray-700 dark:text-gray-200">Preview: {previewDoc}</span>
-                <button type="button" onClick={() => setPreviewDoc(null)} className="text-sm text-gray-500 hover:text-gray-700">Tutup</button>
-              </div>
-              <iframe title={`Preview ${previewDoc}`} src={previewUrl ?? undefined} className="h-[420px] w-full bg-white" />
-            </div>
+            <PdfPreviewBox docName={previewDoc} row={row} onClose={() => setPreviewDoc(null)} />
           )}
         </div>
 
         <div className="mt-6 flex justify-end">
           <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Tutup</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── PDF Generator & Preview Engine ────────────────────────────────────────────
+
+declare global {
+  interface Window {
+    __simpresmaPdfMap?: Record<string, string>;
+  }
+}
+
+const UPLOADED_PDF_STORAGE_KEY = "simpresma_uploaded_pdfs";
+
+function sanitizePdfAscii(text: string): string {
+  return String(text || "")
+    .replace(/[^\x20-\x7E]/g, "-")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function loadStoredPdfMap(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(UPLOADED_PDF_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function saveUploadedDocumentUrl(fileName: string, file: File): Promise<string> {
+  if (!window.__simpresmaPdfMap) {
+    window.__simpresmaPdfMap = {};
+  }
+  const objectUrl = URL.createObjectURL(file);
+  window.__simpresmaPdfMap[fileName] = objectUrl;
+
+  if (file.size <= 1.8 * 1024 * 1024) {
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      if (dataUrl) {
+        const map = loadStoredPdfMap();
+        const keys = Object.keys(map);
+        if (keys.length >= 6) {
+          delete map[keys[0]];
+        }
+        map[fileName] = dataUrl;
+        try {
+          localStorage.setItem(UPLOADED_PDF_STORAGE_KEY, JSON.stringify(map));
+          window.__simpresmaPdfMap[fileName] = dataUrl;
+        } catch {
+          // Ignore localStorage quota exceeded
+        }
+      }
+    } catch {
+      // Ignore FileReader error
+    }
+  }
+
+  if (getToken()) {
+    try {
+      const res = await api.shared.uploadDokumen(file);
+      if (res?.data?.url) {
+        window.__simpresmaPdfMap[fileName] = res.data.url;
+        return res.data.url;
+      }
+    } catch {
+      // Fallback to local object/data URL
+    }
+  }
+
+  return window.__simpresmaPdfMap[fileName] || objectUrl;
+}
+
+export function dataUrlToPdfBlobUrl(dataUrl: string): string {
+  try {
+    const parts = dataUrl.split(",");
+    const base64 = parts[1] || "";
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+  } catch {
+    return dataUrl;
+  }
+}
+
+export function createValidPdfBlobUrl(docTitle: string, row?: Partial<Prestasi>): string {
+  const cleanTitle = docTitle.replace(/^blob:.*|^data:application\/pdf.*/, "Dokumen Prestasi.pdf");
+  const lines: Array<{ text: string; size: number; gap: number }> = [
+    { text: "KEMENTERIAN PENDIDIKAN TINGGI, SAINS, DAN TEKNOLOGI", size: 11, gap: 0 },
+    { text: "UNIVERSITAS JEMBER - FAKULTAS ILMU KOMPUTER", size: 12, gap: 18 },
+    { text: "SISTEM INFORMASI PRESTASI MAHASISWA (SIMPRESMA)", size: 10, gap: 16 },
+    { text: "-----------------------------------------------------------------------", size: 10, gap: 14 },
+    { text: `Dokumen: ${cleanTitle}`, size: 13, gap: 26 },
+    { text: `Tanggal Pratinjau: ${new Date().toLocaleDateString("id-ID")}`, size: 9, gap: 18 },
+    { text: " ", size: 10, gap: 14 },
+    { text: `Nama Mahasiswa : ${row?.mahasiswa || "Chelsea Brilliant Syah Putra"}`, size: 10, gap: 18 },
+    { text: `NIM            : ${row?.nim || "242410101079"}`, size: 10, gap: 16 },
+    { text: `Program Studi  : ${row?.prodi || "Sistem Informasi"}`, size: 10, gap: 16 },
+    { text: `Nama Lomba     : ${row?.lomba || "-"}`, size: 10, gap: 16 },
+    { text: `Bidang         : ${row?.bidang || "-"}`, size: 10, gap: 16 },
+    { text: `Tingkatan      : ${row?.tingkatan || "-"}`, size: 10, gap: 16 },
+    { text: `Tahapan        : ${row?.tahapan || "-"}`, size: 10, gap: 16 },
+    { text: `Status         : ${row?.status || "Diproses"}`, size: 10, gap: 16 },
+  ];
+
+  if (row?.mataKuliah?.length) {
+    lines.push({ text: `Mata Kuliah    : ${row.mataKuliah.join(", ")}`, size: 10, gap: 16 });
+  }
+  if (row?.sks) {
+    lines.push({ text: `Konversi SKS   : ${row.sks} SKS`, size: 10, gap: 16 });
+  }
+  if (row?.nilai?.length) {
+    lines.push({ text: `Nilai Konversi : ${row.nilai.join(", ")}`, size: 10, gap: 16 });
+  }
+
+  lines.push({ text: " ", size: 10, gap: 24 });
+  lines.push({ text: "Dokumen ini dirender sebagai pratinjau PDF valid oleh SIMPRESMA.", size: 9, gap: 14 });
+  lines.push({ text: "FASILKOM Universitas Jember - Jl. Kalimantan No. 37, Jember", size: 9, gap: 14 });
+
+  const streamCommands = [
+    "BT",
+    "50 770 Td",
+    ...lines.map((item) => {
+      const move = item.gap ? `0 -${item.gap} Td ` : "";
+      return `${move}/F1 ${item.size} Tf (${sanitizePdfAscii(item.text)}) Tj`;
+    }),
+    "ET",
+  ].join("\n");
+
+  const encoder = new TextEncoder();
+  const streamBytes = encoder.encode(streamCommands);
+  const objects = [
+    "1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n",
+    "2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n",
+    "3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>endobj\n",
+    "4 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n",
+    `5 0 obj<< /Length ${streamBytes.length} >>stream\n${streamCommands}\nendstream endobj\n`,
+  ];
+
+  let pdf = "%PDF-1.4\n";
+  const offsets: number[] = [0];
+  for (const obj of objects) {
+    offsets.push(encoder.encode(pdf).length);
+    pdf += obj;
+  }
+  const xrefOffset = encoder.encode(pdf).length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let i = 1; i < offsets.length; i++) {
+    pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  return URL.createObjectURL(new Blob([encoder.encode(pdf)], { type: "application/pdf" }));
+}
+
+export function resolveDocumentPreviewUrl(docNameOrUrl: string, row?: Partial<Prestasi>): string {
+  if (!docNameOrUrl) return createValidPdfBlobUrl("Dokumen.pdf", row);
+
+  if (docNameOrUrl.startsWith("blob:") || docNameOrUrl.startsWith("/storage/")) {
+    return docNameOrUrl;
+  }
+  if (docNameOrUrl.startsWith("data:application/pdf")) {
+    return dataUrlToPdfBlobUrl(docNameOrUrl);
+  }
+
+  const mappedUrl =
+    (row?.skFileName === docNameOrUrl && row?.skUrl ? row.skUrl : undefined) ||
+    row?.dokumenUrls?.[docNameOrUrl] ||
+    window.__simpresmaPdfMap?.[docNameOrUrl] ||
+    loadStoredPdfMap()[docNameOrUrl];
+
+  if (mappedUrl) {
+    if (mappedUrl.startsWith("data:application/pdf")) {
+      return dataUrlToPdfBlobUrl(mappedUrl);
+    }
+    if (
+      mappedUrl.startsWith("blob:") ||
+      mappedUrl.startsWith("/storage/") ||
+      (mappedUrl.startsWith("http") && !mappedUrl.includes("storage.unej.ac.id/simpresma/"))
+    ) {
+      return mappedUrl;
+    }
+  }
+
+  return createValidPdfBlobUrl(docNameOrUrl, row);
+}
+
+export function PdfPreviewBox({
+  docName,
+  row,
+  onClose,
+  heightClass = "h-[440px]",
+}: {
+  docName: string;
+  row?: Partial<Prestasi>;
+  onClose: () => void;
+  heightClass?: string;
+}) {
+  const [blobUrl, setBlobUrl] = useState<string>("");
+
+  useEffect(() => {
+    const resolved = resolveDocumentPreviewUrl(docName, row);
+    setBlobUrl(resolved);
+    return () => {
+      if (resolved.startsWith("blob:") && !docName.startsWith("blob:")) {
+        window.setTimeout(() => {
+          try {
+            URL.revokeObjectURL(resolved);
+          } catch {
+            // Ignored
+          }
+        }, 1500);
+      }
+    };
+  }, [docName, row]);
+
+  const displayName = docName.startsWith("blob:") ? "Dokumen_Terunggah.pdf" : docName;
+
+  return (
+    <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-50 px-4 py-3 dark:bg-gray-800">
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-700 dark:text-gray-200">
+          Preview: {displayName}
+        </span>
+        <div className="flex items-center gap-3">
+          {blobUrl && (
+            <>
+              <a
+                href={blobUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-semibold text-brand-500 hover:underline"
+              >
+                Tab Baru
+              </a>
+              <a
+                href={blobUrl}
+                download={displayName.endsWith(".pdf") ? displayName : `${displayName}.pdf`}
+                className="text-xs font-semibold text-success-600 hover:underline dark:text-success-400"
+              >
+                Unduh
+              </a>
+            </>
+          )}
+          <button type="button" onClick={onClose} className="text-xs font-semibold text-gray-500 hover:text-gray-700 dark:text-gray-400">
+            Tutup
+          </button>
+        </div>
+      </div>
+      {blobUrl ? (
+        <iframe title={`Preview ${displayName}`} src={blobUrl} className={`${heightClass} w-full bg-white`} />
+      ) : (
+        <div className={`${heightClass} flex items-center justify-center bg-white text-sm text-gray-500 dark:bg-gray-900`}>
+          Memuat dokumen PDF...
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function PdfPreviewModal({
+  docName,
+  row,
+  onClose,
+}: {
+  docName: string | null;
+  row?: Partial<Prestasi>;
+  onClose: () => void;
+}) {
+  const [blobUrl, setBlobUrl] = useState<string>("");
+
+  useEffect(() => {
+    if (!docName) {
+      setBlobUrl("");
+      return;
+    }
+    const resolved = resolveDocumentPreviewUrl(docName, row);
+    setBlobUrl(resolved);
+    return () => {
+      if (resolved.startsWith("blob:") && !docName.startsWith("blob:")) {
+        window.setTimeout(() => {
+          try {
+            URL.revokeObjectURL(resolved);
+          } catch {
+            // Ignored
+          }
+        }, 1500);
+      }
+    };
+  }, [docName, row]);
+
+  if (!docName) return null;
+  const displayName = docName.startsWith("blob:") ? "Dokumen_Terunggah.pdf" : docName;
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+      <div className="flex h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-slate-200/70 dark:border-gray-700 dark:bg-gray-900 dark:ring-gray-700">
+        <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-5 py-3 dark:border-gray-800">
+          <h3 className="truncate text-sm font-semibold text-gray-800 dark:text-white/90">
+            Preview Dokumen: {displayName}
+          </h3>
+          <div className="flex items-center gap-3 shrink-0">
+            {blobUrl && (
+              <>
+                <a
+                  href={blobUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-brand-500 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                >
+                  Tab Baru
+                </a>
+                <a
+                  href={blobUrl}
+                  download={displayName.endsWith(".pdf") ? displayName : `${displayName}.pdf`}
+                  className="rounded-lg bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-600"
+                >
+                  Unduh PDF
+                </a>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Tutup Preview"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+        {blobUrl ? (
+          <iframe title={`Preview ${displayName}`} src={blobUrl} className="w-full flex-1 bg-white" />
+        ) : (
+          <div className="flex flex-1 items-center justify-center bg-white text-sm text-gray-500 dark:bg-gray-900">
+            Memuat dokumen PDF...
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1077,17 +1436,37 @@ export function DashboardRole({
 }) {
   const { data } = usePrestasi();
 
-    const cfg = {
+  const studentProfile = role === "Mahasiswa" ? loadProfileForRole("Mahasiswa") : null;
+  const dashboardData = role === "Mahasiswa"
+    ? data.filter(
+        (r) =>
+          r.mahasiswa === "Chelsea Brilliant Syah Putra" ||
+          (studentProfile?.name && r.mahasiswa === studentProfile.name) ||
+          (studentProfile?.nim_nip && r.nim === studentProfile.nim_nip)
+      )
+    : data;
+  const recentRows = dashboardData.slice(0, 5);
+  const pending = dashboardData.filter((r) => r.status === "Pending").length;
+  const accepted = dashboardData.filter((r) => r.status === "Diterima").length;
+  const converted = dashboardData.filter((r) => r.status === "Terkonversi" && r.skUploaded).length;
+  const allConverted = dashboardData.filter((r) => r.status === "Terkonversi").length;
+  const rejected = dashboardData.filter((r) => r.status === "Ditolak").length;
+  const total = Math.max(1, pending + accepted + converted + rejected);
+  const pendingPct = Math.round((pending / total) * 100);
+  const acceptedPct = Math.round((accepted / total) * 100);
+  const convertedPct = Math.round((converted / total) * 100);
+
+  const cfg = {
     Mahasiswa: {
       eyebrow: "Portal Mahasiswa",
-      title: "Selamat Datang, Mahasiswa SI",
+      title: `Selamat Datang, ${studentProfile?.name || "Mahasiswa FASILKOM"}`,
       desc: "Ajukan prestasi perlombaan Anda untuk mendapatkan konversi SKS mata kuliah secara resmi sesuai panduan fakultas.",
       action: "Ajukan Prestasi Baru",
       stats: [
-        { value: "22", label: "Total Pengajuan", icon: <FileIcon className="size-6" /> },
-        { value: "14", label: "Menunggu Verifikasi", icon: <TimeIcon className="size-6" /> },
-        { value: "1", label: "Disetujui", icon: <CheckCircleIcon className="size-6" /> },
-        { value: "0", label: "Selesai Konversi", icon: <DownloadIcon className="size-6" /> },
+        { value: dashboardData.length, label: "Total Pengajuan", icon: <FileIcon className="size-6" /> },
+        { value: pending, label: "Menunggu Verifikasi", icon: <TimeIcon className="size-6" /> },
+        { value: accepted, label: "Disetujui", icon: <CheckCircleIcon className="size-6" /> },
+        { value: converted, label: "SK Selesai", icon: <DownloadIcon className="size-6" /> },
       ],
     },
     Verifikator: {
@@ -1096,10 +1475,10 @@ export function DashboardRole({
       desc: "Kelola dan verifikasi pengajuan prestasi sesuai scope Program Studi yang ditetapkan.",
       action: "Buka Shared Inbox",
       stats: [
-        { value: "12", label: "Menunggu Verifikasi", icon: <TimeIcon className="size-6" /> },
-        { value: "5", label: "Perlu Perbaikan", icon: <AlertIcon className="size-6" /> },
-        { value: "48", label: "Sudah Diverifikasi", icon: <CheckCircleIcon className="size-6" /> },
-        { value: "65", label: "Total Prestasi", icon: <FileIcon className="size-6" /> },
+        { value: pending, label: "Menunggu Verifikasi", icon: <TimeIcon className="size-6" /> },
+        { value: rejected, label: "Perlu Perbaikan", icon: <AlertIcon className="size-6" /> },
+        { value: accepted + allConverted, label: "Sudah Diverifikasi", icon: <CheckCircleIcon className="size-6" /> },
+        { value: dashboardData.length, label: "Total Prestasi", icon: <FileIcon className="size-6" /> },
       ],
     },
     Tendik: {
@@ -1108,10 +1487,10 @@ export function DashboardRole({
       desc: "Pantau hasil konversi secara read-only dan kelola penerbitan SK final mahasiswa.",
       action: "Lihat Pengajuan",
       stats: [
-        { value: "18", label: "Siap Dibuatkan SK", icon: <DownloadIcon className="size-6" /> },
-        { value: "42", label: "SK Terunggah", icon: <CheckCircleIcon className="size-6" /> },
-        { value: "42", label: "Konversi Read-Only", icon: <EyeIcon className="size-6" /> },
-        { value: "3", label: "Program Studi", icon: <GroupIcon className="size-6" /> },
+        { value: dashboardData.filter((r) => r.status === "Terkonversi" && !r.skUploaded).length, label: "Siap Dibuatkan SK", icon: <DownloadIcon className="size-6" /> },
+        { value: converted, label: "SK Terunggah", icon: <CheckCircleIcon className="size-6" /> },
+        { value: allConverted, label: "Konversi Read-Only", icon: <EyeIcon className="size-6" /> },
+        { value: 3, label: "Program Studi", icon: <GroupIcon className="size-6" /> },
       ],
     },
     Wadek: {
@@ -1120,10 +1499,10 @@ export function DashboardRole({
       desc: "Pantau capaian prestasi, proses verifikasi, dan konversi mahasiswa lintas Program Studi.",
       action: "Lihat Peninjauan",
       stats: [
-        { value: "1,248", label: "Total Mahasiswa", icon: <GroupIcon className="size-6" /> },
-        { value: "342", label: "Total Prestasi", icon: <FileIcon className="size-6" /> },
-        { value: "286", label: "Terverifikasi", icon: <CheckCircleIcon className="size-6" /> },
-        { value: "3", label: "Program Studi", icon: <GridIcon className="size-6" /> },
+        { value: new Set(dashboardData.map((r) => r.nim)).size, label: "Mahasiswa Berprestasi", icon: <GroupIcon className="size-6" /> },
+        { value: dashboardData.length, label: "Total Prestasi", icon: <FileIcon className="size-6" /> },
+        { value: accepted + allConverted, label: "Terverifikasi", icon: <CheckCircleIcon className="size-6" /> },
+        { value: 3, label: "Program Studi", icon: <GridIcon className="size-6" /> },
       ],
     },
     Kaprodi: {
@@ -1132,44 +1511,31 @@ export function DashboardRole({
       desc: "Pantau pengajuan, rekap prestasi, konversi, dan performa Verifikator pada Program Studi sendiri.",
       action: "Lihat Pengajuan",
       stats: [
-        { value: "128", label: "Mahasiswa Prodi", icon: <GroupIcon className="size-6" /> },
-        { value: "42", label: "Total Prestasi", icon: <FileIcon className="size-6" /> },
-        { value: "36", label: "Terverifikasi", icon: <CheckCircleIcon className="size-6" /> },
-        { value: "2", label: "Verifikator", icon: <UserIcon className="size-6" /> },
+        { value: new Set(dashboardData.map((r) => r.nim)).size, label: "Mahasiswa Prodi", icon: <GroupIcon className="size-6" /> },
+        { value: dashboardData.length, label: "Total Prestasi", icon: <FileIcon className="size-6" /> },
+        { value: accepted + allConverted, label: "Terverifikasi", icon: <CheckCircleIcon className="size-6" /> },
+        { value: 3, label: "Verifikator Aktif", icon: <UserIcon className="size-6" /> },
       ],
     },
   }[role];
 
-const navigate = useNavigate();
+  const navigate = useNavigate();
 
-const actionRoute: Record<typeof role, string> = {
+  const actionRoute: Record<typeof role, string> = {
     Mahasiswa: "/mahasiswa/pengajuan",
     Verifikator: "/verifikator/menunggu",
     Tendik: "/tendik/data-prestasi",
     Wadek: "/wadek/monitoring",
     Kaprodi: "/kaprodi/monitoring",
-};
+  };
 
-const viewAllRoute: Record<typeof role, string> = {
+  const viewAllRoute: Record<typeof role, string> = {
     Mahasiswa: "/mahasiswa/riwayat",        // Riwayat Prestasi
     Verifikator: "/verifikator/riwayat",    // Riwayat Verifikasi
     Tendik: "/tendik/data-prestasi",        // Pengajuan & Upload SK
     Wadek: "/wadek/monitoring",            // Peninjauan Prestasi
     Kaprodi: "/kaprodi/monitoring",        // Peninjauan Prestasi
-};
-
-  const dashboardData = role === "Mahasiswa"
-    ? data.filter((r) => r.mahasiswa === "Chelsea Brilliant Syah Putra")
-    : data;
-  const recentRows = dashboardData.slice(0, 5);
-  const pending = Math.max(0, dashboardData.filter((r) => r.status === "Pending").length);
-  const accepted = dashboardData.filter((r) => r.status === "Diterima").length;
-  const converted = dashboardData.filter((r) => r.status === "Terkonversi" && r.skUploaded).length;
-  const rejected = dashboardData.filter((r) => r.status === "Ditolak").length;
-  const total = Math.max(1, pending + accepted + converted + rejected);
-  const pendingPct = Math.round((pending / total) * 100);
-  const acceptedPct = Math.round((accepted / total) * 100);
-  const convertedPct = Math.round((converted / total) * 100);
+  };
 
   return (
     <div className="space-y-6">
@@ -1225,7 +1591,7 @@ const viewAllRoute: Record<typeof role, string> = {
                 <circle cx="50" cy="50" r="40" fill="transparent" stroke="#f04438" strokeWidth="12" strokeDasharray={`${(Math.max(0, 100 - pendingPct - acceptedPct - convertedPct) / 100) * 251.327} ${251.327}`} strokeDashoffset={`${-(((pendingPct + acceptedPct + convertedPct) / 100) * 251.327)}`} />
               </svg>
               <div className="absolute flex h-24 w-24 flex-col items-center justify-center rounded-full bg-white shadow-theme-xs dark:bg-gray-900">
-                <span className="text-2xl font-bold text-gray-800 dark:text-white/90">{data.length}</span>
+                <span className="text-2xl font-bold text-gray-800 dark:text-white/90">{pending + accepted + converted + rejected}</span>
                 <span className="text-[11px] text-gray-500">Pengajuan</span>
               </div>
             </div>
@@ -1325,7 +1691,7 @@ const viewAllRoute: Record<typeof role, string> = {
             <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Pengajuan Terbaru</h3>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">5 pengajuan prestasi perlombaan terakhir.</p>
           </div>
-          <span className="text-sm font-medium text-brand-500 hover:underline cursor-pointer"onClick={() => navigate(viewAllRoute[role])}>Lihat Semua ({data.length})</span>
+          <span className="text-sm font-medium text-brand-500 hover:underline cursor-pointer" onClick={() => navigate(viewAllRoute[role])}>Lihat Semua ({dashboardData.length})</span>
         </div>
         <div className="mt-4">
           <PrestasiTable data={recentRows} hideStudentColumns={role === "Mahasiswa"} />

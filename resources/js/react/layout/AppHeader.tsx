@@ -1,17 +1,94 @@
-import { useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router";
-
-import { Link } from "react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router";
 import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
 import NotificationDropdown from "../components/header/NotificationDropdown";
 import UserDropdown from "../components/header/UserDropdown";
 import SimpresmaRoleSwitcher from "../components/header/SimpresmaRoleSwitcher";
+import { usePrestasi } from "../pages/Simpresma/SimpresmaShared";
+
+const ROLE_MENU_ROUTES: Record<string, Array<{ label: string; to: string }>> = {
+  Mahasiswa: [
+    { label: "Dashboard Mahasiswa", to: "/mahasiswa/dashboard" },
+    { label: "Ajukan Prestasi Baru", to: "/mahasiswa/pengajuan" },
+    { label: "Riwayat Prestasi & SK", to: "/mahasiswa/riwayat" },
+    { label: "Profil Pengguna", to: "/mahasiswa/profil" },
+  ],
+  Verifikator: [
+    { label: "Dashboard Verifikator", to: "/verifikator/dashboard" },
+    { label: "Menunggu Verifikasi", to: "/verifikator/menunggu" },
+    { label: "Perlu Perbaikan", to: "/verifikator/perbaikan" },
+    { label: "Riwayat Verifikasi", to: "/verifikator/riwayat" },
+    { label: "Master Matriks SKS", to: "/verifikator/matriks-sks" },
+    { label: "Master Matriks Nilai", to: "/verifikator/matriks-nilai" },
+    { label: "Profil Verifikator", to: "/verifikator/profil" },
+  ],
+  Tendik: [
+    { label: "Pengajuan & Upload SK", to: "/tendik/data-prestasi" },
+    { label: "Profil Tendik", to: "/tendik/profil" },
+  ],
+  Wadek: [
+    { label: "Dashboard Wakil Dekan", to: "/wadek/dashboard" },
+    { label: "Monitoring Prestasi", to: "/wadek/monitoring" },
+    { label: "Rekap Prestasi", to: "/wadek/rekap" },
+    { label: "Manajemen Hak Akses", to: "/wadek/manajemen-akses" },
+    { label: "Master Bidang Lomba", to: "/wadek/master-bidang" },
+    { label: "Pelaporan Excel", to: "/wadek/pelaporan" },
+    { label: "Profil Wakil Dekan", to: "/wadek/profil" },
+  ],
+  Kaprodi: [
+    { label: "Dashboard Kaprodi", to: "/kaprodi/dashboard" },
+    { label: "Monitoring Prodi", to: "/kaprodi/monitoring" },
+    { label: "Rekap Prestasi Prodi", to: "/kaprodi/rekap" },
+    { label: "Resume Konversi", to: "/kaprodi/konversi" },
+    { label: "Pelaporan Excel", to: "/kaprodi/pelaporan" },
+    { label: "Profil Kaprodi", to: "/kaprodi/profil" },
+  ],
+};
 
 const AppHeader: React.FC = () => {
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { data } = usePrestasi();
   const hideNotifications = location.pathname.startsWith("/wadek") || location.pathname.startsWith("/kaprodi");
+
+  const activeRole = location.pathname.startsWith("/verifikator")
+    ? "Verifikator"
+    : location.pathname.startsWith("/tendik")
+    ? "Tendik"
+    : location.pathname.startsWith("/wadek")
+    ? "Wadek"
+    : location.pathname.startsWith("/kaprodi")
+    ? "Kaprodi"
+    : "Mahasiswa";
+
+  const quickResults = useMemo(() => {
+    const keyword = searchQuery.trim().toLowerCase();
+    if (!keyword) return { menus: [], submissions: [] };
+    const menus = (ROLE_MENU_ROUTES[activeRole] || []).filter((item) =>
+      item.label.toLowerCase().includes(keyword)
+    );
+    const submissions = data
+      .filter((item) =>
+        `${item.lomba} ${item.mahasiswa} ${item.nim} ${item.status}`.toLowerCase().includes(keyword)
+      )
+      .slice(0, 4);
+    return { menus, submissions };
+  }, [searchQuery, activeRole, data]);
+
+  const targetListRoute =
+    activeRole === "Verifikator"
+      ? "/verifikator/menunggu"
+      : activeRole === "Tendik"
+      ? "/tendik/data-prestasi"
+      : activeRole === "Wadek"
+      ? "/wadek/monitoring"
+      : activeRole === "Kaprodi"
+      ? "/kaprodi/monitoring"
+      : "/mahasiswa/riwayat";
 
   const { isMobileOpen, toggleSidebar, toggleMobileSidebar } = useSidebar();
 
@@ -124,8 +201,8 @@ const AppHeader: React.FC = () => {
             </svg>
           </button>
 
-          <div className="hidden lg:block">
-            <form>
+          <div className="hidden lg:block relative">
+            <form onSubmit={(e) => e.preventDefault()}>
               <div className="relative">
                 <span className="absolute -translate-y-1/2 pointer-events-none left-4 top-1/2">
                   <svg
@@ -147,10 +224,83 @@ const AppHeader: React.FC = () => {
                 <input
                   ref={inputRef}
                   type="text"
-                  placeholder="Cari"
-                  className="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-200 bg-transparent py-2.5 pl-12 pr-14 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-800 dark:bg-gray-900 dark:bg-white/[0.03] dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800 xl:w-[430px]"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => window.setTimeout(() => setSearchFocused(false), 180)}
+                  placeholder="Cari menu, lomba, atau mahasiswa..."
+                  className="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-200 bg-transparent py-2.5 pl-12 pr-10 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-800 dark:bg-gray-900 dark:bg-white/[0.03] dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800 xl:w-[430px]"
                 />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    aria-label="Hapus pencarian"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-gray-400 hover:text-gray-600"
+                  >
+                    ×
+                  </button>
+                )}
               </div>
+              {searchFocused && searchQuery.trim().length > 0 && (
+                <div className="absolute left-0 top-13 z-[90] w-full xl:w-[430px] rounded-xl border border-gray-200 bg-white p-2 shadow-xl dark:border-gray-700 dark:bg-gray-900">
+                  {quickResults.menus.length === 0 && quickResults.submissions.length === 0 ? (
+                    <p className="px-3 py-4 text-center text-xs text-gray-500">
+                      Tidak ditemukan hasil untuk "{searchQuery}"
+                    </p>
+                  ) : (
+                    <>
+                      {quickResults.menus.length > 0 && (
+                        <div className="mb-1">
+                          <p className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                            Halaman Menu
+                          </p>
+                          {quickResults.menus.map((menu) => (
+                            <button
+                              key={menu.to}
+                              type="button"
+                              onMouseDown={() => {
+                                setSearchQuery("");
+                                navigate(menu.to);
+                              }}
+                              className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+                            >
+                              <span>{menu.label}</span>
+                              <span className="text-xs text-brand-500">Buka</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {quickResults.submissions.length > 0 && (
+                        <div>
+                          <p className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                            Data Prestasi
+                          </p>
+                          {quickResults.submissions.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onMouseDown={() => {
+                                setSearchQuery("");
+                                navigate(targetListRoute);
+                              }}
+                              className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate font-medium text-gray-800 dark:text-white/90">{item.lomba}</span>
+                                <span className="block truncate text-xs text-gray-500">{item.mahasiswa} • {item.prodi}</span>
+                              </span>
+                              <span className="shrink-0 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-600 dark:bg-brand-500/15 dark:text-brand-400">
+                                {item.status}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </form>
           </div>
         </div>

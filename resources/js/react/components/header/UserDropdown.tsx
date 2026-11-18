@@ -1,14 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DropdownItem } from "../ui/dropdown/DropdownItem";
 import { Dropdown } from "../ui/dropdown/Dropdown";
 import { useNavigate, useLocation } from "react-router";
 import api, { removeToken } from "../../services/api";
-import { loadActiveAccount } from "../../pages/Simpresma/SimpresmaMockAccess";
+import { loadProfileForRole } from "../../pages/Simpresma/SimpresmaMockAccess";
 
 export default function UserDropdown() {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
-  const activeAccount = loadActiveAccount();
 
   const location = useLocation();
   const role = location.pathname.startsWith("/verifikator") ? "Verifikator"
@@ -17,13 +16,22 @@ export default function UserDropdown() {
   : location.pathname.startsWith("/kaprodi") ? "Kaprodi"
   : "Mahasiswa";
 
-const profilPath = {
-  Mahasiswa: "/mahasiswa/profil",
-  Verifikator: "/verifikator/profil",
-  Tendik: "/tendik/profil",
-  Wadek: "/wadek/profil",
-  Kaprodi: "/kaprodi/profil",
-}[role];
+  const [profile, setProfile] = useState(() => loadProfileForRole(role));
+
+  useEffect(() => {
+    const sync = () => setProfile(loadProfileForRole(role));
+    sync();
+    window.addEventListener("simpresma:profile-update", sync);
+    return () => window.removeEventListener("simpresma:profile-update", sync);
+  }, [role]);
+
+  const profilPath = {
+    Mahasiswa: "/mahasiswa/profil",
+    Verifikator: "/verifikator/profil",
+    Tendik: "/tendik/profil",
+    Wadek: "/wadek/profil",
+    Kaprodi: "/kaprodi/profil",
+  }[role];
 
   const logout = () => {
     localStorage.removeItem("simpresma_mock_account");
@@ -40,17 +48,30 @@ const profilPath = {
   function closeDropdown() {
     setIsOpen(false);
   }
+
+  const displayName = profile?.name || "Civitas FASILKOM";
+  const displayEmail = profile?.email || "user@fasilkom.unej.ac.id";
+  const initialChar = displayName.trim().charAt(0).toUpperCase() || "U";
+
   return (
     <div className="relative">
       <button
+        type="button"
         onClick={toggleDropdown}
+        aria-label="Menu Pengguna"
         className="flex items-center text-gray-700 dropdown-toggle dark:text-gray-400"
       >
-        <span className="mr-3 overflow-hidden rounded-full h-11 w-11">
-          <img src="/images/user/owner.jpg" alt="User" />
+        <span className="mr-3 overflow-hidden rounded-full h-11 w-11 border border-gray-200 dark:border-gray-700 shrink-0">
+          {profile?.avatar ? (
+            <img src={profile.avatar} alt={displayName} className="h-full w-full object-cover" />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center bg-brand-100 text-sm font-bold text-brand-600 dark:bg-brand-500/20 dark:text-brand-400">
+              {initialChar}
+            </span>
+          )}
         </span>
 
-        <span className="block mr-1 font-medium text-theme-sm">{activeAccount?.name || "Civitas FASILKOM"}</span>
+        <span className="block mr-1 font-medium text-theme-sm max-w-[140px] truncate">{displayName}</span>
         <svg
           className={`stroke-gray-500 dark:stroke-gray-400 transition-transform duration-200 ${
             isOpen ? "rotate-180" : ""
@@ -77,11 +98,14 @@ const profilPath = {
         className="absolute right-0 mt-[17px] flex w-[260px] flex-col rounded-2xl border border-gray-200 bg-white p-3 shadow-theme-lg dark:border-gray-800 dark:bg-gray-dark"
       >
         <div>
-          <span className="block font-medium text-gray-700 text-theme-sm dark:text-gray-400">
-            Lian
+          <span className="block font-medium text-gray-700 text-theme-sm dark:text-gray-300">
+            {displayName}
           </span>
           <span className="mt-0.5 block text-theme-xs text-gray-500 dark:text-gray-400">
-            lian@gmail.com
+            {displayEmail}
+          </span>
+          <span className="mt-1 inline-block rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-600 dark:bg-brand-500/15 dark:text-brand-400">
+            {role}
           </span>
         </div>
 

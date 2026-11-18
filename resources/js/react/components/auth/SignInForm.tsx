@@ -54,7 +54,15 @@ export default function SignInForm() {
             name: user.nama || user.name || "Pengguna SIMPRESMA",
             email: user.email,
             roles: mappedRoles.length > 0 ? mappedRoles : ["Mahasiswa"],
-            prodi: user.prodi?.nama || user.prodi || undefined,
+            prodi: (user.prodi?.nama || user.prodi || undefined) as
+              | "Sistem Informasi"
+              | "Teknologi Informasi"
+              | "Informatika"
+              | undefined,
+            nim_nip: user.nim_nip || undefined,
+            whatsapp: user.no_whatsapp || undefined,
+            avatar: user.avatar || undefined,
+            telegramConnected: user.telegram_connected || false,
           },
           primaryRole
         );
@@ -150,7 +158,7 @@ export default function SignInForm() {
               </div>
 
               <div>
-                <Button className="w-full" size="sm" disabled={loading}>
+                <Button type="submit" className="w-full" size="sm" disabled={loading}>
                   {loading ? "Memproses..." : "Masuk"}
                 </Button>
               </div>

@@ -1,36 +1,19 @@
-import React, { useEffect, useState } from "react";
-import { loadActiveAccount } from "./SimpresmaMockAccess";
+import { useState } from "react";
 import DropdownSelect from "../../components/form/DropdownSelect";
 import { getConversionMatrix, loadBidangMapping, masterCoursesByProdi } from "./SimpresmaMatrix";
 import {
   Card,
   Input,
+  PdfPreviewBox,
   Prestasi,
   PrestasiTable,
+  prodiOptions,
   SearchFilter,
   Textarea,
   Title,
   usePrestasi,
   FlashMessage,
 } from "./SimpresmaShared";
-
-function createMockPdfUrl(title: string) {
-  const safe = title.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-  const stream = `BT\n/F1 14 Tf\n50 760 Td\n(${safe}) Tj\n/F1 10 Tf\n0 -28 Td\n(Preview PDF simulasi frontend SIMPRESMA) Tj\nET`;
-  const objects = [
-    "1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj",
-    "2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj",
-    "3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>endobj",
-    "4 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj",
-    `5 0 obj<< /Length ${stream.length} >>stream\n${stream}\nendstream endobj`,
-  ];
-  let pdf = "%PDF-1.4\n"; const offsets = [0];
-  for (const obj of objects) { offsets.push(pdf.length); pdf += obj + "\n"; }
-  const xref = pdf.length; pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (let i = 1; i < offsets.length; i++) pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
-  pdf += `trailer<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-  return URL.createObjectURL(new Blob([pdf], { type: "application/pdf" }));
-}
 
 function VerificationList({
   mode,
@@ -40,32 +23,15 @@ function VerificationList({
   const { data, update } = usePrestasi();
 
   const [q, setQ] = useState("");
+  const [prodiFilter, setProdiFilter] = useState("");
   const [selected, setSelected] = useState<Prestasi | null>(null);
   const [feedback, setFeedback] = useState("");
   const [bidang, setBidang] = useState("");
   const [previewDoc, setPreviewDoc] = useState<string | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
   const [decisionLoading, setDecisionLoading] = useState(false);
   const [flash, setFlash] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  useEffect(() => {
-    if (!previewDoc) { setPreviewUrl(null); setPreviewLoading(false); return; }
-    setPreviewLoading(true);
-    const timer = window.setTimeout(() => {
-      const url = createMockPdfUrl(previewDoc);
-      setPreviewUrl(url);
-      setPreviewLoading(false);
-    }, 250);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [previewDoc]);
-
-  const activeAccount = loadActiveAccount();
-  const scopeProdi = activeAccount?.prodi ?? "Sistem Informasi";
-
-  let rows = data.filter((r) => r.prodi === scopeProdi);
+  let rows = data.filter((r) => !prodiFilter || r.prodi === prodiFilter);
 
   if (mode === "pending") {
     rows = rows.filter((r) => r.status === "Pending");
@@ -161,8 +127,19 @@ function VerificationList({
         }
       />
 
-      <div className="mb-4">
-        <SearchFilter value={q} onChange={setQ} />
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row">
+        <div className="flex-1">
+          <SearchFilter value={q} onChange={setQ} />
+        </div>
+        <DropdownSelect
+          value={prodiFilter}
+          onChange={setProdiFilter}
+          options={[
+            { value: "", label: "Semua Program Studi" },
+            ...prodiOptions.map((item) => ({ value: item, label: item })),
+          ]}
+          className="w-full sm:w-60"
+        />
       </div>
 
       <Card className="p-5">
@@ -282,17 +259,7 @@ function VerificationList({
                 ))}
               </div>
               {previewDoc && (
-                <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center justify-between bg-gray-50 px-4 py-3 dark:bg-gray-800">
-                    <span className="truncate text-sm font-medium">Preview: {previewDoc}</span>
-                    <button type="button" onClick={() => setPreviewDoc(null)} className="text-sm text-gray-500">Tutup</button>
-                  </div>
-                  {previewLoading ? (
-                    <div className="flex h-[420px] flex-col items-center justify-center bg-white text-center dark:bg-gray-900"><span className="h-5 w-5 animate-spin rounded-full border-2 border-[#3978e8] border-t-transparent" /><p className="mt-3 text-xs font-semibold text-gray-700 dark:text-gray-200">Memuat halaman...</p><p className="mt-1 text-[10px] text-gray-500">Harap tunggu sebentar</p></div>
-                  ) : previewUrl ? (
-                    <iframe title={`Preview ${previewDoc}`} src={previewUrl} className="h-[420px] w-full bg-white" />
-                  ) : null}
-                </div>
+                <PdfPreviewBox docName={previewDoc} row={selected} onClose={() => setPreviewDoc(null)} />
               )}
             </div>
 

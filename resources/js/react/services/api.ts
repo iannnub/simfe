@@ -16,6 +16,7 @@ export interface AuthUser {
   name?: string;
   email: string;
   no_whatsapp?: string;
+  avatar?: string;
   telegram_connected?: boolean;
   prodi?: { id: number; nama: string; singkatan: string };
   roles: string[];
@@ -107,6 +108,57 @@ export const api = {
     },
     me: async () => {
       return apiRequest<{ success: boolean; data: AuthUser }>("/auth/me");
+    },
+    register: async (payload: {
+      nama: string;
+      nim_nip: string;
+      email: string;
+      password: string;
+      prodi_id?: number;
+      no_whatsapp?: string;
+    }) => {
+      const res = await apiRequest<{ success: boolean; message: string; data: { token: string; user: AuthUser } }>(
+        "/auth/register",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
+      if (res.data?.token) {
+        setToken(res.data.token);
+        localStorage.setItem("simpresma_user", JSON.stringify(res.data.user));
+      }
+      return res;
+    },
+    updateProfile: async (payload: FormData) => {
+      const res = await apiRequest<{ success: boolean; message: string; data: AuthUser }>(
+        "/auth/profile",
+        {
+          method: "POST",
+          body: payload,
+        }
+      );
+      if (res.data) {
+        localStorage.setItem("simpresma_user", JSON.stringify(res.data));
+      }
+      return res;
+    },
+    connectTelegram: async (telegram_chat_id: string) => {
+      return apiRequest<{ success: boolean; message: string; data: AuthUser }>(
+        "/auth/connect-telegram",
+        {
+          method: "POST",
+          body: JSON.stringify({ telegram_chat_id }),
+        }
+      );
+    },
+    disconnectTelegram: async () => {
+      return apiRequest<{ success: boolean; message: string; data: AuthUser }>(
+        "/auth/disconnect-telegram",
+        {
+          method: "POST",
+        }
+      );
     },
     gapuraRedirect: () => {
       window.location.href = `${BASE_URL}/auth/gapura/redirect`;
@@ -304,6 +356,14 @@ export const api = {
       ),
     direktoriVerifikator: () =>
       apiRequest<{ success: boolean; data: JsonRecord[] }>("/direktori-verifikator"),
+    uploadDokumen: (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return apiRequest<{ success: boolean; data: { name: string; url: string; size: number } }>(
+        "/upload-dokumen",
+        { method: "POST", body: fd }
+      );
+    },
   },
 };
 

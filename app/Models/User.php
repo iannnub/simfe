@@ -23,6 +23,7 @@ class User extends Authenticatable
         'role',
         'prodi_id',
         'no_whatsapp',
+        'avatar',
         'telegram_chat_id',
         'telegram_connected_at',
     ];

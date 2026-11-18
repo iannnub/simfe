@@ -3,30 +3,38 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\Prodi;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
     /**
      * POST /api/auth/login
-     * Login dummy (Tahap 1) — email + password
+     * Login — email atau NIM/NIP + password
      */
     public function login(Request $request): JsonResponse
     {
         $request->validate([
-            'email'    => 'required|email',
+            'email'    => 'required|string',
             'password' => 'required|string',
         ]);
 
-        $user = User::with(['prodi', 'roles'])->where('email', $request->email)->first();
+        $loginKey = trim($request->email);
+        $user = User::with(['prodi', 'roles'])
+            ->where('email', $loginKey)
+            ->orWhere('nim_nip', $loginKey)
+            ->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
-                'email' => ['Email atau password salah.'],
+                'email' => ['Email / NIM / NIP atau password salah.'],
             ]);
         }
 
@@ -38,6 +46,133 @@ class AuthController extends Controller
             'data'    => [
                 'token' => $token,
                 'user'  => $this->formatUser($user),
+            ],
+        ]);
+    }
+
+    /**
+     * POST /api/auth/register
+     * Registrasi akun Mahasiswa baru SIMPRESMA
+     */
+    public function register(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'nama'        => 'required|string|max:150',
+            'nim_nip'     => 'required|string|max:30|unique:users,nim_nip',
+            'email'       => 'required|email|max:150|unique:users,email',
+            'password'    => 'required|string|min:6',
+            'prodi_id'    => 'nullable|exists:prodi,id',
+            'no_whatsapp' => 'nullable|string|max:20',
+        ]);
+
+        $prodiId = $validated['prodi_id'] ?? Prodi::orderBy('id')->value('id');
+
+        $user = User::create([
+            'nama'        => $validated['nama'],
+            'nim_nip'     => $validated['nim_nip'],
+            'email'       => $validated['email'],
+            'password'    => Hash::make($validated['password']),
+            'prodi_id'    => $prodiId,
+            'no_whatsapp' => $validated['no_whatsapp'] ?? null,
+            'role'        => ['mahasiswa'],
+        ]);
+
+        if ($roleMhs = Role::where('name', 'mahasiswa')->first()) {
+            $user->roles()->syncWithoutDetaching([$roleMhs->id]);
+        }
+
+        $token = $user->createToken('simpresma-token')->plainTextToken;
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pendaftaran akun mahasiswa berhasil.',
+            'data'    => [
+                'token' => $token,
+                'user'  => $this->formatUser($user->fresh(['prodi', 'roles'])),
+            ],
+        ], 201);
+    }
+
+    /**
+     * POST|PUT /api/auth/profile
+     * Middleware: auth:sanctum
+     * Update profil pengguna, password, & foto profil (avatar)
+     */
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'nama'          => 'sometimes|required|string|max:150',
+            'email'         => ['sometimes', 'required', 'email', 'max:150', Rule::unique('users', 'email')->ignore($user->id)],
+            'nim_nip'       => ['sometimes', 'nullable', 'string', 'max:30', Rule::unique('users', 'nim_nip')->ignore($user->id)],
+            'no_whatsapp'   => 'sometimes|nullable|string|max:20',
+            'password'      => 'sometimes|nullable|string|min:6',
+            'avatar'        => 'sometimes|nullable',
+            'remove_avatar' => 'sometimes|boolean',
+        ]);
+
+        $updateData = [];
+        foreach (['nama', 'email', 'nim_nip', 'no_whatsapp'] as $field) {
+            if (array_key_exists($field, $validated)) {
+                $updateData[$field] = $validated[$field];
+            }
+        }
+
+        if (!empty($validated['password'])) {
+            $updateData['password'] = Hash::make($validated['password']);
+        }
+
+        if ($request->boolean('remove_avatar')) {
+            if ($user->avatar && str_starts_with($user->avatar, '/storage/')) {
+                Storage::disk('public')->delete(str_replace('/storage/', '', $user->avatar));
+            }
+            $updateData['avatar'] = null;
+        } elseif ($request->hasFile('avatar')) {
+            $request->validate([
+                'avatar' => 'image|mimes:jpeg,png,jpg,webp|max:5120',
+            ]);
+            if ($user->avatar && str_starts_with($user->avatar, '/storage/')) {
+                Storage::disk('public')->delete(str_replace('/storage/', '', $user->avatar));
+            }
+            $path = $request->file('avatar')->store('avatars', 'public');
+            $updateData['avatar'] = '/storage/' . $path;
+        } elseif (is_string($request->input('avatar')) && strlen($request->input('avatar')) <= 500) {
+            $updateData['avatar'] = $request->input('avatar');
+        }
+
+        if (!empty($updateData)) {
+            $user->update($updateData);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Profil berhasil diperbarui.',
+            'data'    => $this->formatUser($user->fresh(['prodi', 'roles'])),
+        ]);
+    }
+
+    /**
+     * POST /api/upload-dokumen
+     * Middleware: auth:sanctum
+     * Upload dokumen PDF asli ke storage publik
+     */
+    public function uploadDokumen(Request $request): JsonResponse
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:pdf|max:10240',
+        ]);
+
+        $file = $request->file('file');
+        $path = $file->store('dokumen', 'public');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Dokumen berhasil diunggah.',
+            'data'    => [
+                'name' => $file->getClientOriginalName(),
+                'url'  => '/storage/' . $path,
+                'size' => $file->getSize(),
             ],
         ]);
     }
@@ -160,6 +295,7 @@ class AuthController extends Controller
             'nama'                   => $user->nama,
             'email'                  => $user->email,
             'no_whatsapp'            => $user->no_whatsapp,
+            'avatar'                 => $user->avatar,
             'telegram_connected'     => !empty($user->telegram_chat_id),
             'telegram_connected_at'  => $user->telegram_connected_at?->toISOString(),
             'prodi'                  => $user->prodi ? [

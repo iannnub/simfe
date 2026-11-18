@@ -41,6 +41,7 @@ Route::get('health', function () {
 
 Route::prefix('auth')->group(function () {
     Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
+    Route::post('register', [AuthController::class, 'register'])->middleware('throttle:login');
     Route::get('gapura/redirect', [\App\Http\Controllers\Auth\GapuraAuthController::class, 'redirect']);
     Route::get('gapura/callback', [\App\Http\Controllers\Auth\GapuraAuthController::class, 'callback']);
 });
@@ -51,13 +52,17 @@ Route::post('telegram/webhook', [\App\Http\Controllers\TelegramWebhookController
 // ─── Auth Protected ──────────────────────────────────────────────────────
 Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
-    // Auth
+    // Auth & Profil
     Route::prefix('auth')->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
         Route::get('me', [AuthController::class, 'me']);
+        Route::match(['post', 'put'], 'profile', [AuthController::class, 'updateProfile']);
         Route::post('connect-telegram', [AuthController::class, 'connectTelegram']);
         Route::post('disconnect-telegram', [AuthController::class, 'disconnectTelegram']);
     });
+
+    // Upload dokumen PDF
+    Route::post('upload-dokumen', [AuthController::class, 'uploadDokumen']);
 
     // Ref (Master & Lookup data untuk form)
     Route::prefix('ref')->group(function () {
