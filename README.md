@@ -22,12 +22,21 @@ Sebelum menginstal, pastikan komputer/laptop telah terpasang:
 ## 🚀 Panduan Instalasi Lengkap (Step-by-Step)
 
 ### 1. Clone / Download Repositori
-Buka terminal (Git Bash, Command Prompt, atau PowerShell) di direktori kerja Anda:
-```bash
-git clone https://github.com/iannnub/simfe.git
-cd simfe
-```
-*(Atau jika mendownload file ZIP dari GitHub, ekstrak folder ZIP tersebut lalu buka foldernya di terminal/VS Code).*
+
+Pilih salah satu cara di bawah:
+
+- **Cara A (Download File ZIP - Paling Mudah Tanpa Git):**
+  1. Buka link repositori: [https://github.com/iannnub/simfe](https://github.com/iannnub/simfe)
+  2. Klik tombol hijau **`<> Code`**, lalu pilih **`Download ZIP`**.
+  3. Ekstrak file `simfe-main.zip` ke folder yang diinginkan (misal di `D:\Capstone Project\simfe-main`).
+  4. Buka folder tersebut di **VS Code** (atau klik kanan folder -> *Open with Code*).
+
+- **Cara B (Menggunakan Git Clone):**
+  Buka terminal (Git Bash, Command Prompt, atau PowerShell):
+  ```bash
+  git clone https://github.com/iannnub/simfe.git
+  cd simfe
+  ```
 
 ---
 
@@ -80,6 +89,7 @@ Jalankan perintah migration Laravel berikut:
 ```bash
 php artisan migrate:fresh --seed
 ```
+> **Tips Jika Menggunakan Opsi B:** Pastikan Anda menggunakan kode terbaru dari repositori ini karena struktur tabel foreign key dan engine InnoDB sudah dioptimasi untuk mencegah error MySQL `errno: 150`. Jika Anda pemula atau ingin langsung cepat pakai, sangat disarankan menggunakan **Opsi A** (Import file `.sql`).
 
 ---
 
