@@ -184,6 +184,25 @@ export default function MahasiswaPengajuan() {
   const confirmSubmit = async () => {
     setSubmitLoading(true);
     try {
+      const tingkatanIdMap: Record<string, number> = {
+        Internasional: 1,
+        "Nasional Kementerian (Gemastik, LIDM, Satria Data, NUDC, KDMI, MTQMN)": 2,
+        "Nasional Kementerian (PKM, P2MW, PPK Ormawa, Pilmapres, Peksiminas)": 3,
+        "Nasional Non Kementerian-Mandiri": 4,
+        "Wilayah-Regional-Provinsi": 5,
+        Promahadesa: 6,
+      };
+      const tahapanIdMap: Record<string, number> = {
+        Mendaftar: 1,
+        "Lolos Tahap Awal": 2,
+        Finalis: 3,
+        "Pemenang (Juara 1/2/3/Honorable Mention)": 4,
+      };
+
+      let backendCreated:
+        | { id?: number; bidang_id?: number; prodi_id?: number; bidang?: { nama?: string } }
+        | undefined;
+
       if (getToken()) {
         try {
           const isLocalHost = ["localhost", "127.0.0.1", "0.0.0.0"].includes(window.location.hostname);
@@ -192,11 +211,11 @@ export default function MahasiswaPengajuan() {
               ? `${window.location.origin}${localPath}`
               : fallback;
 
-          await api.mahasiswa.storePengajuan({
+          const res = await api.mahasiswa.storePengajuan({
             nama_lomba: namaLomba,
-            bidang_id: 1,
-            tingkatan_id: 1,
-            tahapan_id: 3,
+            bidang_id: 6,
+            tingkatan_id: tingkatanIdMap[tingkatan] ?? 1,
+            tahapan_id: tahapanIdMap[tahapan] ?? 3,
             semester: parseInt(semester, 10) || 4,
             nama_tim: namaTim || null,
             no_whatsapp: whatsapp,
@@ -206,19 +225,22 @@ export default function MahasiswaPengajuan() {
             link_surat_tugas_mahasiswa: resolveBackendUrl(previewFiles.suratMahasiswa, "https://storage.unej.ac.id/simpresma/surat_tugas_mhs.pdf"),
             link_surat_tugas_dosen: resolveBackendUrl(previewFiles.suratDosen, "https://storage.unej.ac.id/simpresma/surat_tugas_dosen.pdf"),
           });
+          backendCreated = res?.data as typeof backendCreated;
         } catch (apiErr) {
           console.warn("Backend API sync warning:", apiErr);
         }
       }
 
-      const nextId = data.reduce((max, item) => Math.max(max, item.id), 0) + 1;
+      const nextId = Number(backendCreated?.id) || data.reduce((max, item) => Math.max(max, item.id), 0) + 1;
       add({
         id: nextId,
+        bidangId: Number(backendCreated?.bidang_id) || 6,
+        prodiId: Number(backendCreated?.prodi_id) || undefined,
         mahasiswa: studentName,
         nim: studentNim,
         prodi: studentProdi,
         lomba: namaLomba,
-        bidang: "-",
+        bidang: backendCreated?.bidang?.nama || "-",
         tingkatan,
         tahapan,
         jenis: namaTim.trim() ? "Kelompok" : "Individu",

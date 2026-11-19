@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Mahasiswa;
 
 use App\Events\PengajuanSubmitted;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Mahasiswa\PilihMataKuliahRequest;
 use App\Http\Requests\Mahasiswa\StorePengajuanRequest;
 use App\Models\Pengajuan;
 use App\Services\PengajuanService;
@@ -19,6 +20,8 @@ class PengajuanController extends Controller
     public function index(Request $request): JsonResponse
     {
         $pengajuan = Pengajuan::with([
+            'mahasiswa:id,nama,nim_nip',
+            'prodi:id,kode,singkatan,nama',
             'bidang:id,nama',
             'tingkatan:id,nama,urutan',
             'tahapan:id,kode,nama,urutan',
@@ -90,6 +93,31 @@ class PengajuanController extends Controller
             'success' => true,
             'message' => 'OK',
             'data'    => $pengajuan,
+        ]);
+    }
+
+    /**
+     * POST /api/mahasiswa/pengajuan/{id}/mata-kuliah
+     * Simpan pilihan mata kuliah konversi setelah pengajuan diterima & kirim notifikasi Telegram ke Tendik.
+     */
+    public function pilihMataKuliah(
+        PilihMataKuliahRequest $request,
+        int $id,
+        PengajuanService $pengajuanService
+    ): JsonResponse {
+        $pengajuan = Pengajuan::findOrFail($id);
+
+        $updated = $pengajuanService->pilihMataKuliah(
+            $pengajuan,
+            $request->user(),
+            $request->validated('mata_kuliah_ids', []),
+            $request->validated('mata_kuliah_names', [])
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Mata kuliah konversi berhasil disimpan. Notifikasi telah dikirim ke Tendik untuk pembuatan SK.',
+            'data'    => $updated,
         ]);
     }
 }

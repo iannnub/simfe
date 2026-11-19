@@ -6,10 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\Prodi;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\TelegramService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -240,17 +243,18 @@ class AuthController extends Controller
 
         // Kirim pesan konfirmasi ke user
         try {
-            app(\App\Services\TelegramService::class)->sendMessage(
+            $telegram = app(TelegramService::class);
+            $telegram->sendMessage(
                 $validated['telegram_chat_id'],
                 implode("\n", [
                     "✅ <b>Akun Berhasil Terhubung!</b>",
                     "",
-                    "Halo <b>{$user->nama}</b>,",
+                    "Halo <b>{$telegram->escapeHtml($user->nama)}</b>,",
                     "Akun SIMPRESMA Anda kini terhubung dengan Telegram.",
                     "",
                     "Anda akan menerima notifikasi real-time untuk setiap update pengajuan prestasi.",
                     "",
-                    "— SIMPRESMA @" . config('services.telegram.bot_username'),
+                    "— SIMPRESMA @{$telegram->getBotUsername()}",
                 ])
             );
         } catch (\Throwable) {
@@ -261,6 +265,114 @@ class AuthController extends Controller
             'success' => true,
             'message' => 'Akun Telegram berhasil dihubungkan.',
             'data'    => $this->formatUser($user->fresh(['prodi', 'roles'])),
+        ]);
+    }
+
+    /**
+     * POST /api/auth/telegram/link-token
+     * Hasilkan tautan deep-link satu klik menuju bot Telegram untuk menghubungkan akun otomatis.
+     */
+    public function createTelegramLinkToken(Request $request, TelegramService $telegram): JsonResponse
+    {
+        $user  = $request->user();
+        $token = Str::random(32);
+
+        Cache::put("tg_link:{$token}", $user->id, now()->addMinutes(10));
+        Cache::put("tg_user_token:{$user->id}", $token, now()->addMinutes(10));
+
+        $botUsername = $telegram->getBotUsername();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Tautan penghubung Telegram siap digunakan.',
+            'data'    => [
+                'deep_link'    => "https://t.me/{$botUsername}?start={$token}",
+                'bot_username' => $botUsername,
+                'expires_in'   => 600,
+            ],
+        ]);
+    }
+
+    /**
+     * POST /api/auth/telegram/check-link
+     * Cek status koneksi Telegram user (sekaligus sinkronisasi getUpdates saat berjalan di lokal).
+     */
+    public function checkTelegramLink(Request $request, TelegramService $telegram): JsonResponse
+    {
+        $user  = $request->user();
+        $fresh = $user->fresh(['prodi', 'roles']);
+
+        if (empty($fresh->telegram_chat_id) && $telegram->isConfigured()) {
+            $webhookUrl  = (string) (config('services.telegram.webhook_url') ?? '');
+            $webhookHost = (string) (parse_url($webhookUrl, PHP_URL_HOST) ?? '');
+            $isLocalMode = $webhookUrl === '' || in_array($webhookHost, ['localhost', '127.0.0.1', '0.0.0.0'], true);
+
+            if ($isLocalMode) {
+                $expectedToken = Cache::get("tg_user_token:{$user->id}");
+                $offset        = Cache::get('telegram_poll_offset');
+                $updates       = $telegram->getUpdates(is_numeric($offset) ? (int) $offset : null, 0, 50);
+
+                foreach ($updates as $update) {
+                    $text = (string) ($update['message']['text'] ?? '');
+                    if ($expectedToken && str_contains($text, $expectedToken)) {
+                        $telegram->processUpdate($update);
+                        $updateId = (int) ($update['update_id'] ?? 0);
+                        if ($updateId > 0) {
+                            Cache::forever('telegram_poll_offset', $updateId + 1);
+                        }
+                    }
+                }
+
+                $fresh = $user->fresh(['prodi', 'roles']);
+            }
+        }
+
+        $connected = !empty($fresh->telegram_chat_id);
+
+        return response()->json([
+            'success'   => true,
+            'message'   => $connected ? 'Akun Telegram sudah terhubung.' : 'Akun Telegram belum terhubung.',
+            'connected' => $connected,
+            'data'      => $this->formatUser($fresh),
+        ]);
+    }
+
+    /**
+     * POST /api/auth/telegram/test
+     * Kirim pesan uji coba ke Telegram user yang sedang login.
+     */
+    public function testTelegram(Request $request, TelegramService $telegram): JsonResponse
+    {
+        $user = $request->user();
+
+        if (empty($user->telegram_chat_id)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Akun Anda belum terhubung dengan Telegram Chat ID.',
+            ], 422);
+        }
+
+        $botName = $telegram->getBotUsername();
+        $sent = $telegram->sendMessage(
+            (string) $user->telegram_chat_id,
+            implode("\n", [
+                "🔔 <b>Tes Notifikasi SIMPRESMA Berhasil!</b>",
+                "",
+                "Halo <b>{$telegram->escapeHtml($user->nama)}</b>,",
+                "Pesan ini mengonfirmasi bahwa notifikasi Telegram SIMPRESMA (@{$botName}) siap mengirim pembaruan real-time ke akun Anda.",
+            ])
+        );
+
+        if (!$sent) {
+            return response()->json([
+                'success' => false,
+                'message' => "Gagal mengirim pesan ke Telegram. Pastikan Anda sudah menekan Start di bot @{$botName}.",
+            ], 502);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pesan tes berhasil dikirim ke Telegram Anda.',
         ]);
     }
 
@@ -296,6 +408,7 @@ class AuthController extends Controller
             'email'                  => $user->email,
             'no_whatsapp'            => $user->no_whatsapp,
             'avatar'                 => $user->avatar,
+            'telegram_chat_id'       => $user->telegram_chat_id,
             'telegram_connected'     => !empty($user->telegram_chat_id),
             'telegram_connected_at'  => $user->telegram_connected_at?->toISOString(),
             'prodi'                  => $user->prodi ? [

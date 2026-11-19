@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Verifikator;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Verifikator\ProcessPengajuanRequest;
+use App\Models\BidangLomba;
 use App\Models\Pengajuan;
 use App\Models\VerifikatorProdi;
 use App\Services\PengajuanService;
@@ -134,10 +135,18 @@ class PengajuanController extends Controller
     {
         $pengajuan = Pengajuan::findOrFail($id);
 
-        $feedback = $request->input('feedback_verifikator');
+        $feedback = $request->input('feedback_verifikator') ?? $request->input('feedback');
+        $bidangId = $request->filled('bidang_id') ? (int) $request->input('bidang_id') : null;
+
+        if ($bidangId === null && $request->filled('bidang_nama')) {
+            $resolvedId = BidangLomba::where('nama', trim((string) $request->input('bidang_nama')))
+                ->where('is_active', 1)
+                ->value('id');
+            $bidangId = $resolvedId ? (int) $resolvedId : null;
+        }
 
         // Delegate ke PengajuanService::terima() — sudah handle scope check & status validation
-        $pengajuan = $pengajuanService->terima($pengajuan, $request->user(), $feedback);
+        $pengajuan = $pengajuanService->terima($pengajuan, $request->user(), $feedback, $bidangId);
 
         return response()->json([
             'success' => true,

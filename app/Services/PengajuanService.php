@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Events\MataKuliahKonversiSelected;
 use App\Events\PengajuanStatusChanged;
+use App\Models\BidangLomba;
 use App\Models\BidangMataKuliah;
 use App\Models\MataKuliah;
 use App\Models\Pengajuan;
@@ -174,11 +176,167 @@ class PengajuanService
     }
 
     /**
+     * Mahasiswa memilih / menyimpan mata kuliah konversi pada pengajuan yang telah diterima.
+     *
+     * @throws ValidationException
+     */
+    public function pilihMataKuliah(
+        Pengajuan $pengajuan,
+        User $mahasiswa,
+        array $mkIds = [],
+        array $mkNames = []
+    ): Pengajuan {
+        if ($pengajuan->user_id !== $mahasiswa->id) {
+            abort(403, 'Akses ditolak. Anda tidak berhak mengubah pengajuan ini.');
+        }
+
+        if ($pengajuan->status !== 'diterima') {
+            throw ValidationException::withMessages([
+                'status' => ['Mata kuliah konversi hanya dapat dipilih pada pengajuan yang telah disetujui (diterima) oleh Verifikator.'],
+            ]);
+        }
+
+        $maxAllowedSks = (int) ($pengajuan->snapshot_max_sks ?? 0);
+
+        if (!empty($mkIds)) {
+            $mataKuliahs = $this->validateMataKuliah(
+                $mkIds,
+                (int) $pengajuan->bidang_id,
+                (int) $pengajuan->prodi_id,
+                $maxAllowedSks
+            );
+        } else {
+            $mataKuliahs = $this->resolveMataKuliahByNames(
+                $mkNames,
+                (int) $pengajuan->bidang_id,
+                (int) $pengajuan->prodi_id,
+                $maxAllowedSks
+            );
+        }
+
+        DB::transaction(function () use ($pengajuan, $mataKuliahs) {
+            PengajuanMataKuliah::where('pengajuan_id', $pengajuan->id)->delete();
+
+            foreach ($mataKuliahs as $mk) {
+                PengajuanMataKuliah::create([
+                    'pengajuan_id'   => $pengajuan->id,
+                    'mata_kuliah_id' => $mk->id,
+                    'sks_snapshot'   => $mk->sks,
+                    'huruf_nilai'    => null,
+                ]);
+            }
+        });
+
+        $fresh = $pengajuan->fresh([
+            'mataKuliahs',
+            'pengajuanMataKuliahs.mataKuliah',
+            'bidang',
+            'tingkatan',
+            'tahapan',
+            'prodi',
+            'verifikator',
+            'mahasiswa',
+        ]);
+
+        event(new MataKuliahKonversiSelected($fresh, $mahasiswa));
+
+        return $fresh;
+    }
+
+    /**
+     * Resolusi daftar nama/kode MK (fallback dari UI) ke entitas MataKuliah pada prodi terkait.
+     *
+     * @throws ValidationException
+     */
+    protected function resolveMataKuliahByNames(
+        array $mkNames,
+        int $bidangId,
+        int $prodiId,
+        int $maxSks = 0
+    ): Collection {
+        if ($maxSks === 0) {
+            throw ValidationException::withMessages([
+                'mata_kuliah_ids' => ['Tahapan lomba ini tidak menyediakan konversi SKS (hanya pencatatan portofolio/SKPI). Tidak dapat memilih mata kuliah.'],
+            ]);
+        }
+
+        $cleanNames = collect($mkNames)
+            ->map(function ($name) {
+                $str = trim((string) $name);
+                if (str_contains($str, ' - ')) {
+                    return trim(substr($str, strpos($str, ' - ') + 3));
+                }
+                return $str;
+            })
+            ->filter()
+            ->values();
+
+        if ($cleanNames->isEmpty()) {
+            throw ValidationException::withMessages([
+                'mata_kuliah_names' => ['Pilih minimal satu mata kuliah konversi.'],
+            ]);
+        }
+
+        $prodiCourses = MataKuliah::where('prodi_id', $prodiId)
+            ->where('is_active', 1)
+            ->get();
+
+        $matched = $prodiCourses->filter(function ($mk) use ($cleanNames) {
+            $mkNameLower = mb_strtolower(trim($mk->nama_mk));
+            $mkCodeLower = mb_strtolower(trim($mk->kode_mk));
+            return $cleanNames->contains(function ($needle) use ($mkNameLower, $mkCodeLower) {
+                $needleLower = mb_strtolower($needle);
+                return $needleLower === $mkNameLower || $needleLower === $mkCodeLower;
+            });
+        })->values();
+
+        if ($matched->isEmpty()) {
+            $mappedIds = BidangMataKuliah::where('bidang_id', $bidangId)
+                ->where('is_active', 1)
+                ->pluck('mata_kuliah_id');
+
+            $fallbackCandidates = $prodiCourses->whereIn('id', $mappedIds)->values();
+            if ($fallbackCandidates->isEmpty()) {
+                $fallbackCandidates = $prodiCourses;
+            }
+
+            $selected = new Collection();
+            $accSks = 0;
+            foreach ($fallbackCandidates as $candidate) {
+                if ($maxSks > 0 && ($accSks + (int) $candidate->sks) > $maxSks) {
+                    continue;
+                }
+                $selected->push($candidate);
+                $accSks += (int) $candidate->sks;
+                if ($selected->count() >= $cleanNames->count()) {
+                    break;
+                }
+            }
+            $matched = $selected;
+        }
+
+        if ($matched->isEmpty()) {
+            throw ValidationException::withMessages([
+                'mata_kuliah_names' => ['Mata kuliah konversi yang sesuai untuk program studi Anda tidak ditemukan.'],
+            ]);
+        }
+
+        $totalSks = $matched->sum('sks');
+        if ($maxSks > 0 && $totalSks > $maxSks) {
+            throw ValidationException::withMessages([
+                'mata_kuliah_names' => ["Total SKS mata kuliah yang dipilih ({$totalSks} SKS) melebihi batas maksimum konversi ({$maxSks} SKS)."],
+            ]);
+        }
+
+        return $matched;
+    }
+
+    /**
      * Verifikator menerima pengajuan.
      *
      * @throws ValidationException
      */
-    public function terima(Pengajuan $pengajuan, User $verifikator, ?string $feedback = null): Pengajuan
+    public function terima(Pengajuan $pengajuan, User $verifikator, ?string $feedback = null, ?int $bidangId = null): Pengajuan
     {
         $this->validateVerifikatorScope($verifikator, $pengajuan->prodi_id);
 
@@ -188,12 +346,18 @@ class PengajuanService
             ]);
         }
 
-        $pengajuan->update([
+        $updateData = [
             'status'               => 'diterima',
             'feedback_verifikator' => $feedback ? strip_tags(trim($feedback)) : 'Pengajuan telah diperiksa dan disetujui oleh Dosen Verifikator.',
             'verifikator_id'       => $verifikator->id,
             'verified_at'          => now(),
-        ]);
+        ];
+
+        if ($bidangId !== null && BidangLomba::where('id', $bidangId)->where('is_active', 1)->exists()) {
+            $updateData['bidang_id'] = $bidangId;
+        }
+
+        $pengajuan->update($updateData);
 
         $fresh = $pengajuan->fresh(['mataKuliahs', 'bidang', 'tingkatan', 'tahapan', 'prodi', 'verifikator', 'mahasiswa']);
 
@@ -253,13 +417,15 @@ class PengajuanService
             ]);
         }
 
-        $nilaiList = $data['nilai_per_mk'] ?? [];
-        $pengajuanMks = $pengajuan->pengajuanMataKuliahs()->get();
+        $hasExplicitNilai = array_key_exists('nilai_per_mk', $data) && $data['nilai_per_mk'] !== null;
+        $nilaiList        = $data['nilai_per_mk'] ?? [];
+        $pengajuanMks     = $pengajuan->pengajuanMataKuliahs()->get();
 
         $inputMap = collect($nilaiList)->keyBy('mk_id');
 
-        // Jika ada mata kuliah yang dikonversi, validasi huruf nilainya sesuai snapshot
-        if ($pengajuanMks->isNotEmpty()) {
+        // Jika nilai_per_mk dikirim explicitly oleh Tendik, validasi huruf nilainya strict = snapshot_huruf_nilai.
+        // Jika nilai_per_mk tidak dikirim (otomatis mengikuti matriks), gunakan snapshot_huruf_nilai.
+        if ($hasExplicitNilai && $pengajuanMks->isNotEmpty()) {
             foreach ($pengajuanMks as $pmk) {
                 if (!$inputMap->has($pmk->mata_kuliah_id)) {
                     throw ValidationException::withMessages([
@@ -276,11 +442,15 @@ class PengajuanService
             }
         }
 
-        $result = DB::transaction(function () use ($pengajuan, $pengajuanMks, $inputMap, $tendik, $data) {
+        $result = DB::transaction(function () use ($pengajuan, $pengajuanMks, $inputMap, $hasExplicitNilai, $tendik, $data) {
             if ($pengajuanMks->isNotEmpty()) {
                 foreach ($pengajuanMks as $pmk) {
-                    $inputNilai = $inputMap->get($pmk->mata_kuliah_id)['huruf_nilai'];
-                    $pmk->update(['huruf_nilai' => $inputNilai]);
+                    $hurufNilai = $hasExplicitNilai
+                        ? ($inputMap->get($pmk->mata_kuliah_id)['huruf_nilai'] ?? $pengajuan->snapshot_huruf_nilai)
+                        : $pengajuan->snapshot_huruf_nilai;
+                    if ($hurufNilai !== null && $hurufNilai !== '') {
+                        $pmk->update(['huruf_nilai' => $hurufNilai]);
+                    }
                 }
             }
 

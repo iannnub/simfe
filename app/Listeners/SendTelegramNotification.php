@@ -3,20 +3,14 @@
 namespace App\Listeners;
 
 use App\Events\PengajuanStatusChanged;
-use App\Models\User;
-use App\Models\VerifikatorProdi;
 use App\Services\TelegramService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Support\Facades\Log;
 
 class SendTelegramNotification implements ShouldQueue
 {
     use InteractsWithQueue;
 
-    /**
-     * Jumlah retry jika job gagal
-     */
     public int $tries = 2;
 
     public function __construct(
@@ -33,160 +27,124 @@ class SendTelegramNotification implements ShouldQueue
             'tingkatan',
             'tahapan',
             'prodi',
+            'mataKuliahs',
         ]);
 
-        $newStatus  = $event->newStatus;
-        $namaMhs    = $pengajuan->mahasiswa?->nama ?? 'Mahasiswa';
-        $namaLomba  = $pengajuan->nama_lomba ?? '-';
-        $bidang     = $pengajuan->bidang?->nama ?? '-';
-        $prodi      = $pengajuan->prodi?->singkatan ?? '-';
+        $newStatus = $event->newStatus;
+        $mhsChatId = (string) ($pengajuan->mahasiswa?->telegram_chat_id ?? '');
 
-        // ─── 1. Notifikasi ke Mahasiswa ───────────────────────────────────
-        $mhsChatId = $pengajuan->mahasiswa?->telegram_chat_id;
-
-        if ($mhsChatId && in_array($newStatus, ['pending', 'diterima', 'ditolak', 'selesai'])) {
-            $mhsText = $this->buildMahasiswaMessage($newStatus, $namaLomba, $pengajuan);
-            $this->telegram->sendMessage($mhsChatId, $mhsText);
+        if ($mhsChatId === '' || !in_array($newStatus, ['diterima', 'ditolak', 'selesai'], true)) {
+            return;
         }
 
-        // ─── 2. Notifikasi ke Verifikator (saat pengajuan baru masuk berstatus pending) ─
-        if ($newStatus === 'pending') {
-            $this->notifyVerifikator($namaLomba, $namaMhs, $prodi, (int) $pengajuan->prodi_id, $pengajuan->id);
-        }
-
-        // ─── 3. Notifikasi ke Tendik (ketika pengajuan diterima oleh verifikator) ──
-        if ($newStatus === 'diterima') {
-            $this->notifyTendik($namaLomba, $namaMhs, $prodi, $pengajuan->id);
-        }
+        $text = $this->buildMahasiswaMessage($newStatus, $pengajuan);
+        $this->telegram->sendMessage($mhsChatId, $text);
     }
 
-    // ─── Builder Messages ────────────────────────────────────────────────
-
-    protected function buildMahasiswaMessage(string $status, string $namaLomba, $pengajuan): string
+    protected function buildMahasiswaMessage(string $status, $pengajuan): string
     {
-        $botName = config('services.telegram.bot_username', 'simpresma_unej_bot');
+        $botName    = $this->telegram->getBotUsername();
+        $namaMhs    = $this->telegram->escapeHtml($pengajuan->mahasiswa?->nama ?? 'Mahasiswa');
+        $namaLomba  = $this->telegram->escapeHtml($pengajuan->nama_lomba);
+        $bidang     = $this->telegram->escapeHtml($pengajuan->bidang?->nama);
+        $tingkatan  = $this->telegram->escapeHtml($pengajuan->tingkatan?->nama);
+        $tahapan    = $this->telegram->escapeHtml($pengajuan->tahapan?->nama);
+        $verifikator = $this->telegram->escapeHtml($pengajuan->verifikator?->nama ?? 'Dosen Verifikator');
+        $feedback   = trim((string) ($pengajuan->feedback_verifikator ?? ''));
 
-        return match ($status) {
-            'pending' => implode("\n", [
-                "📤 <b>Pengajuan Prestasi Terkirim!</b>",
-                "",
-                "Halo <b>{$pengajuan->mahasiswa?->nama}</b>,",
-                "Pengajuan prestasi Anda telah berhasil dikirim ke sistem SIMPRESMA.",
-                "",
-                "📋 <b>Detail Pengajuan:</b>",
-                "• Lomba    : {$namaLomba}",
-                "• Bidang   : {$pengajuan->bidang?->nama}",
-                "• Status   : ⏳ Menunggu Verifikasi",
-                "",
-                "Pengajuan Anda saat ini berada dalam antrean Tim Verifikator Program Studi.",
-                "",
-                "— SIMPRESMA @{$botName}",
-            ]),
+        if ($status === 'diterima') {
+            $sksRange = ($pengajuan->snapshot_min_sks !== null && $pengajuan->snapshot_max_sks !== null)
+                ? "{$pengajuan->snapshot_min_sks}–{$pengajuan->snapshot_max_sks} SKS"
+                : "-";
+            $nilai = $this->telegram->escapeHtml($pengajuan->snapshot_huruf_nilai ?? '-');
 
-            'diterima' => implode("\n", [
-                "✅ <b>Pengajuan Diterima!</b>",
+            $lines = [
+                "✅ <b>Pengajuan Prestasi Disetujui!</b>",
                 "",
-                "Halo <b>{$pengajuan->mahasiswa?->nama}</b>,",
-                "Pengajuan prestasi Anda telah <b>disetujui</b> oleh Dosen Verifikator.",
+                "Halo <b>{$namaMhs}</b>,",
+                "Pengajuan prestasi Anda telah <b>disetujui</b> oleh {$verifikator}.",
                 "",
-                "📋 <b>Detail Pengajuan:</b>",
-                "• Lomba    : {$namaLomba}",
-                "• Bidang   : {$pengajuan->bidang?->nama}",
-                "• Status   : ✅ Diterima",
-                ($pengajuan->feedback_verifikator ? "• Catatan  : <i>\"{$pengajuan->feedback_verifikator}\"</i>" : ""),
-                "",
-                "Pengajuan kini diteruskan ke antrean Tendik untuk finalisasi nilai & SK.",
-                "",
-                "— SIMPRESMA @{$botName}",
-            ]),
+                "📋 <b>Detail Keputusan Verifikator:</b>",
+                "• Lomba     : {$namaLomba}",
+                "• Bidang    : {$bidang}",
+                "• Tingkatan : {$tingkatan}",
+                "• Capaian   : {$tahapan}",
+                "• Kuota SKS : {$sksRange} (Nilai: <b>{$nilai}</b>)",
+            ];
 
-            'ditolak' => implode("\n", [
-                "❌ <b>Pengajuan Ditolak</b>",
-                "",
-                "Halo <b>{$pengajuan->mahasiswa?->nama}</b>,",
-                "Maaf, pengajuan prestasi Anda <b>tidak disetujui</b>.",
-                "",
-                "📋 <b>Detail Pengajuan:</b>",
-                "• Lomba    : {$namaLomba}",
-                "• Alasan   : <i>\"{$pengajuan->feedback_verifikator}\"</i>",
-                "",
-                "Silakan periksa catatan revisi di atas dan ajukan kembali jika berkas telah diperbaiki.",
-                "",
-                "— SIMPRESMA @{$botName}",
-            ]),
+            if ($feedback !== '') {
+                $lines[] = "• Catatan   : <i>\"" . $this->telegram->escapeHtml($feedback) . "\"</i>";
+            }
 
-            'selesai' => implode("\n", [
-                "🎉 <b>Konversi SKS & Prestasi Selesai!</b>",
-                "",
-                "Halo <b>{$pengajuan->mahasiswa?->nama}</b>,",
-                "Proses finalisasi prestasi Anda telah <b>selesai</b> diproses oleh Tendik.",
-                "",
-                "📋 <b>Detail:</b>",
-                "• Lomba    : {$namaLomba}",
-                "• Status   : 🎓 Selesai",
-                ($pengajuan->link_sk_konversi ? "• Link SK  : {$pengajuan->link_sk_konversi}" : ""),
-                ($pengajuan->catatan_tendik ? "• Catatan  : <i>\"{$pengajuan->catatan_tendik}\"</i>" : ""),
-                "",
-                "Selamat! Seluruh proses pengakuan prestasi dan SKS telah rampung.",
-                "",
-                "— SIMPRESMA @{$botName}",
-            ]),
+            $lines[] = "";
+            $lines[] = "👉 Silakan buka menu <b>Riwayat Prestasi → Pilih Matkul</b> di SIMPRESMA untuk memilih mata kuliah konversi agar dapat diproses SK oleh Tendik.";
+            $lines[] = "";
+            $lines[] = "— SIMPRESMA @{$botName}";
 
-            default => "Update status pengajuan: {$namaLomba} → {$status}",
-        };
-    }
-
-    protected function notifyVerifikator(string $namaLomba, string $namaMhs, string $prodi, int $prodiId, int $pengajuanId): void
-    {
-        $verifikatorUsers = User::whereHas('verifikatorProdis', fn ($q) => $q->where('prodi_id', $prodiId)->where('is_active', 1))
-            ->whereNotNull('telegram_chat_id')
-            ->get();
-
-        $botName = config('services.telegram.bot_username', 'simpresma_unej_bot');
-        $text = implode("\n", [
-            "📥 <b>Pengajuan Prestasi Baru Masuk</b>",
-            "",
-            "Ada pengajuan prestasi baru yang membutuhkan verifikasi Anda:",
-            "",
-            "• Mahasiswa : {$namaMhs}",
-            "• Prodi     : {$prodi}",
-            "• Lomba     : {$namaLomba}",
-            "• ID        : #{$pengajuanId}",
-            "",
-            "Silakan buka antrean verifikasi di SIMPRESMA untuk memeriksa berkas.",
-            "",
-            "— SIMPRESMA @{$botName}",
-        ]);
-
-        foreach ($verifikatorUsers as $u) {
-            $this->telegram->sendMessage($u->telegram_chat_id, $text);
+            return implode("\n", $lines);
         }
-    }
 
-    protected function notifyTendik(string $namaLomba, string $namaMhs, string $prodi, int $pengajuanId): void
-    {
-        // Ambil semua user yang punya role tendik dan punya telegram_chat_id
-        $tendikUsers = User::whereHas('roles', fn ($q) => $q->where('name', 'tendik'))
-            ->whereNotNull('telegram_chat_id')
-            ->get();
+        if ($status === 'ditolak') {
+            $alasan = $feedback !== '' ? $this->telegram->escapeHtml($feedback) : 'Tidak memenuhi ketentuan verifikasi.';
 
-        $botName = config('services.telegram.bot_username', 'simpresma_unej_bot');
-        $text = implode("\n", [
-            "📥 <b>Pengajuan Siap Difinalisasi</b>",
-            "",
-            "Ada pengajuan yang sudah <b>diterima verifikator</b> dan menunggu finalisasi SK.",
-            "",
-            "• Mahasiswa  : {$namaMhs}",
-            "• Prodi      : {$prodi}",
-            "• Lomba      : {$namaLomba}",
-            "• ID         : #{$pengajuanId}",
-            "",
-            "Silakan login ke SIMPRESMA untuk memproses.",
-            "— @{$botName}",
-        ]);
-
-        foreach ($tendikUsers as $tendik) {
-            $this->telegram->sendMessage($tendik->telegram_chat_id, $text);
+            return implode("\n", [
+                "❌ <b>Pengajuan Prestasi Ditolak</b>",
+                "",
+                "Halo <b>{$namaMhs}</b>,",
+                "Maaf, pengajuan prestasi Anda <b>ditolak</b> oleh {$verifikator}.",
+                "",
+                "📋 <b>Detail Keputusan Verifikator:</b>",
+                "• Lomba  : {$namaLomba}",
+                "• Bidang : {$bidang}",
+                "• Alasan Penolakan: <i>\"{$alasan}\"</i>",
+                "",
+                "Silakan periksa alasan penolakan di atas dan ajukan kembali setelah berkas diperbaiki.",
+                "",
+                "— SIMPRESMA @{$botName}",
+            ]);
         }
+
+        // 'selesai' — Tendik selesai upload SK final & siap diunduh
+        $mkList = [];
+        foreach ($pengajuan->mataKuliahs as $mk) {
+            $nilaiMk = $this->telegram->escapeHtml($mk->pivot?->huruf_nilai ?? $pengajuan->snapshot_huruf_nilai ?? '-');
+            $namaMk  = $this->telegram->escapeHtml($mk->nama_mk);
+            $sksMk   = (int) ($mk->pivot?->sks_snapshot ?? $mk->sks ?? 0);
+            $mkList[] = "  - {$namaMk} ({$sksMk} SKS, Nilai: {$nilaiMk})";
+        }
+
+        $lines = [
+            "🎉 <b>SK Final Konversi Siap Diunduh!</b>",
+            "",
+            "Halo <b>{$namaMhs}</b>,",
+            "Tendik telah menyelesaikan penerbitan dan mengunggah <b>SK Final</b> untuk prestasi Anda.",
+            "",
+            "📋 <b>Detail SK Konversi:</b>",
+            "• Lomba  : {$namaLomba}",
+            "• Bidang : {$bidang}",
+            "• Status : 🎓 Selesai (SK Final Siap Diunduh)",
+        ];
+
+        if (!empty($mkList)) {
+            $lines[] = "• Mata Kuliah Terkonversi:";
+            foreach ($mkList as $item) {
+                $lines[] = $item;
+            }
+        }
+
+        if (!empty($pengajuan->link_sk_konversi)) {
+            $lines[] = "• Link SK : " . $this->telegram->escapeHtml($pengajuan->link_sk_konversi);
+        }
+
+        if (!empty($pengajuan->catatan_tendik)) {
+            $lines[] = "• Catatan Tendik : <i>\"" . $this->telegram->escapeHtml($pengajuan->catatan_tendik) . "\"</i>";
+        }
+
+        $lines[] = "";
+        $lines[] = "👉 Buka menu <b>Riwayat Prestasi → Preview SK / Unduh SK</b> di SIMPRESMA untuk mengunduh SK resmi Anda.";
+        $lines[] = "";
+        $lines[] = "— SIMPRESMA @{$botName}";
+
+        return implode("\n", $lines);
     }
 }

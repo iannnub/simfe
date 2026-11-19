@@ -17,6 +17,7 @@ export interface AuthUser {
   email: string;
   no_whatsapp?: string;
   avatar?: string;
+  telegram_chat_id?: string | null;
   telegram_connected?: boolean;
   prodi?: { id: number; nama: string; singkatan: string };
   roles: string[];
@@ -144,21 +145,53 @@ export const api = {
       return res;
     },
     connectTelegram: async (telegram_chat_id: string) => {
-      return apiRequest<{ success: boolean; message: string; data: AuthUser }>(
+      const res = await apiRequest<{ success: boolean; message: string; data: AuthUser }>(
         "/auth/connect-telegram",
         {
           method: "POST",
           body: JSON.stringify({ telegram_chat_id }),
         }
       );
+      if (res.data) {
+        localStorage.setItem("simpresma_user", JSON.stringify(res.data));
+      }
+      return res;
     },
     disconnectTelegram: async () => {
-      return apiRequest<{ success: boolean; message: string; data: AuthUser }>(
+      const res = await apiRequest<{ success: boolean; message: string; data: AuthUser }>(
         "/auth/disconnect-telegram",
         {
           method: "POST",
         }
       );
+      if (res.data) {
+        localStorage.setItem("simpresma_user", JSON.stringify(res.data));
+      }
+      return res;
+    },
+    createTelegramLinkToken: async () => {
+      return apiRequest<{
+        success: boolean;
+        message: string;
+        data: { deep_link: string; bot_username: string; expires_in: number };
+      }>("/auth/telegram/link-token", { method: "POST" });
+    },
+    checkTelegramLink: async () => {
+      const res = await apiRequest<{
+        success: boolean;
+        message: string;
+        connected: boolean;
+        data: AuthUser;
+      }>("/auth/telegram/check-link", { method: "POST" });
+      if (res.data) {
+        localStorage.setItem("simpresma_user", JSON.stringify(res.data));
+      }
+      return res;
+    },
+    testTelegram: async () => {
+      return apiRequest<{ success: boolean; message: string }>("/auth/telegram/test", {
+        method: "POST",
+      });
     },
     gapuraRedirect: () => {
       window.location.href = `${BASE_URL}/auth/gapura/redirect`;
@@ -199,6 +232,17 @@ export const api = {
           body: JSON.stringify(payload),
         }
       ),
+    pilihMataKuliah: (
+      id: number,
+      payload: { mata_kuliah_ids?: number[]; mata_kuliah_names?: string[] }
+    ) =>
+      apiRequest<{ success: boolean; message: string; data: JsonRecord }>(
+        `/mahasiswa/pengajuan/${id}/mata-kuliah`,
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      ),
   },
 
   // ─── VERIFIKATOR ────────────────────────────────────────────────
@@ -211,12 +255,20 @@ export const api = {
     },
     getDetail: (id: number) =>
       apiRequest<{ success: boolean; data: JsonRecord }>(`/verifikator/pengajuan/${id}`),
-    terima: (id: number, feedback?: string) =>
+    terima: (
+      id: number,
+      feedback?: string,
+      bidang?: { bidang_id?: number; bidang_nama?: string }
+    ) =>
       apiRequest<{ success: boolean; message: string; data: JsonRecord }>(
         `/verifikator/pengajuan/${id}/terima`,
         {
           method: "POST",
-          body: JSON.stringify({ feedback: feedback || "Disetujui" }),
+          body: JSON.stringify({
+            feedback_verifikator: feedback || "Disetujui",
+            ...(bidang?.bidang_id ? { bidang_id: bidang.bidang_id } : {}),
+            ...(bidang?.bidang_nama ? { bidang_nama: bidang.bidang_nama } : {}),
+          }),
         }
       ),
     tolak: (id: number, feedback: string) =>
@@ -224,7 +276,7 @@ export const api = {
         `/verifikator/pengajuan/${id}/tolak`,
         {
           method: "POST",
-          body: JSON.stringify({ feedback }),
+          body: JSON.stringify({ feedback_verifikator: feedback }),
         }
       ),
   },
@@ -239,11 +291,14 @@ export const api = {
     },
     getDetail: (id: number) =>
       apiRequest<{ success: boolean; data: JsonRecord }>(`/tendik/pengajuan/${id}`),
-    finalisasi: (id: number, payload: {
-      link_sk_konversi: string;
-      catatan_tendik?: string;
-      mata_kuliah: { id: number; huruf_nilai: string }[];
-    }) =>
+    finalisasi: (
+      id: number,
+      payload: {
+        link_sk_konversi?: string;
+        catatan_tendik?: string;
+        nilai_per_mk?: { mk_id: number; huruf_nilai: string }[];
+      }
+    ) =>
       apiRequest<{ success: boolean; message: string; data: JsonRecord }>(
         `/tendik/pengajuan/${id}/finalisasi`,
         {

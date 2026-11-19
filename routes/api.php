@@ -59,6 +59,9 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::match(['post', 'put'], 'profile', [AuthController::class, 'updateProfile']);
         Route::post('connect-telegram', [AuthController::class, 'connectTelegram']);
         Route::post('disconnect-telegram', [AuthController::class, 'disconnectTelegram']);
+        Route::post('telegram/link-token', [AuthController::class, 'createTelegramLinkToken']);
+        Route::post('telegram/check-link', [AuthController::class, 'checkTelegramLink']);
+        Route::post('telegram/test', [AuthController::class, 'testTelegram']);
     });
 
     // Upload dokumen PDF
@@ -80,6 +83,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('pengajuan', [\App\Http\Controllers\Mahasiswa\PengajuanController::class, 'index']);
         Route::post('pengajuan', [\App\Http\Controllers\Mahasiswa\PengajuanController::class, 'store'])->middleware('throttle:submissions');
         Route::get('pengajuan/{id}', [\App\Http\Controllers\Mahasiswa\PengajuanController::class, 'show']);
+        Route::post('pengajuan/{id}/mata-kuliah', [\App\Http\Controllers\Mahasiswa\PengajuanController::class, 'pilihMataKuliah']);
     });
 
     // Verifikator

@@ -41,25 +41,40 @@ export function TendikDataPrestasi() {
     window.setTimeout(() => setFlash(null), 3200);
   };
 
-  const uploadSK = () => {
+  const uploadSK = async () => {
     if (!row) return;
     if (!skFile) {
       showFlash("error", "Pilih berkas SK final terlebih dahulu.");
       return;
     }
 
-    if (getToken() && skFileUrl) {
+    if (getToken()) {
       const isLocalHost = ["localhost", "127.0.0.1", "0.0.0.0"].includes(window.location.hostname);
       const publicUrl =
-        skFileUrl.startsWith("/storage/") && !isLocalHost
+        skFileUrl && skFileUrl.startsWith("/storage/") && !isLocalHost
           ? `${window.location.origin}${skFileUrl}`
           : "https://storage.unej.ac.id/simpresma/sk-final.pdf";
-      api.tendik
-        .finalisasi(row.id, {
+
+      const hurufNilai = row.nilai?.[0];
+      const nilaiPerMk =
+        row.mataKuliahItems?.length && hurufNilai
+          ? row.mataKuliahItems
+              .filter((mk) => mk.id > 0)
+              .map((mk) => ({ mk_id: mk.id, huruf_nilai: hurufNilai }))
+          : undefined;
+
+      try {
+        await api.tendik.finalisasi(row.id, {
           link_sk_konversi: publicUrl,
-          mata_kuliah: [],
-        })
-        .catch(() => {});
+          ...(nilaiPerMk?.length ? { nilai_per_mk: nilaiPerMk } : {}),
+        });
+      } catch (err: unknown) {
+        const e = err as { status?: number; message?: string };
+        if (e?.status && e.status !== 404) {
+          showFlash("error", e.message || "Gagal mengunggah SK final ke server.");
+          return;
+        }
+      }
     }
 
     update(row.id, {
@@ -72,7 +87,7 @@ export function TendikDataPrestasi() {
     setSkFile("");
     setSkFileUrl("");
     setPreviewDoc(null);
-    showFlash("success", "SK final berhasil diunggah.");
+    showFlash("success", "SK final berhasil diunggah & notifikasi Telegram siap diunduh dikirim ke mahasiswa.");
   };
 
   const documents = row

@@ -103,6 +103,10 @@ export function MahasiswaRiwayat() {
   const [filter, setFilter] = useState("Semua");
   const [selected, setSelected] = useState<number | null>(null);
   const [selectedMatkul, setSelectedMatkul] = useState<string[]>([]);
+  const [backendCourses, setBackendCourses] = useState<
+    Array<{ id: number; kode_mk?: string; nama_mk: string; sks: number }>
+  >([]);
+  const [savingMatkul, setSavingMatkul] = useState(false);
   const [flash, setFlash] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [previewDoc, setPreviewDoc] = useState<string | null>(null);
   const [previewContextRow, setPreviewContextRow] = useState<Prestasi | undefined>(undefined);
@@ -156,9 +160,63 @@ export function MahasiswaRiwayat() {
   };
 
   const selectedRow = data.find((r) => r.id === selected);
-  const mapping = loadBidangMapping();
-  const available = selectedRow ? mapping[selectedRow.bidang] ?? [] : [];
-  const selectedTotalSks = selectedMatkul.reduce((total, course) => total + getCourseCredits(course), 0);
+
+  useEffect(() => {
+    if (!selectedRow || selectedRow.status !== "Diterima" || !getToken()) {
+      setBackendCourses([]);
+      return;
+    }
+    if (!selectedRow.bidangId || !selectedRow.prodiId) {
+      setBackendCourses([]);
+      return;
+    }
+    let cancelled = false;
+    api.ref
+      .mataKuliah(selectedRow.bidangId, selectedRow.prodiId)
+      .then((res) => {
+        if (cancelled || !Array.isArray(res?.data)) return;
+        setBackendCourses(
+          res.data
+            .map((c) => ({
+              id: Number(c.id),
+              kode_mk: c.kode_mk ? String(c.kode_mk) : undefined,
+              nama_mk: String(c.nama_mk || ""),
+              sks: Number(c.sks || 3),
+            }))
+            .filter((c) => c.nama_mk)
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setBackendCourses([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRow]);
+
+  const courseOptions = useMemo(() => {
+    if (backendCourses.length > 0) {
+      return backendCourses.map((c) => ({
+        id: c.id,
+        label: c.nama_mk,
+        kode: c.kode_mk,
+        sks: c.sks,
+      }));
+    }
+    const mapping = loadBidangMapping();
+    const available = selectedRow ? mapping[selectedRow.bidang] ?? [] : [];
+    return available.map((name) => ({
+      id: 0,
+      label: name,
+      kode: undefined as string | undefined,
+      sks: getCourseCredits(name),
+    }));
+  }, [backendCourses, selectedRow]);
+
+  const selectedTotalSks = selectedMatkul.reduce((total, course) => {
+    const matched = courseOptions.find((opt) => opt.label === course);
+    return total + (matched?.sks ?? getCourseCredits(course));
+  }, 0);
   const selectedRange = getSksRange(selectedRow?.sks);
   const remainingSks = Math.max(0, selectedRange.max - selectedTotalSks);
   const actionFor = (r: { status: string; skUploaded?: boolean }) => {
@@ -314,26 +372,71 @@ export function MahasiswaRiwayat() {
             <span>Sisa {remainingSks} SKS</span>
           </div>
           <div className="mt-5 space-y-2">
-            {available.length ? available.map((m)=>(
-              <label key={m} className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-sm transition hover:border-brand-300 dark:border-gray-800">
-                <input type="checkbox" checked={selectedMatkul.includes(m)} onChange={(e)=>setSelectedMatkul((prev)=>e.target.checked?[...prev,m]:prev.filter((x)=>x!==m))} />
+            {courseOptions.length ? courseOptions.map((opt)=>(
+              <label key={opt.id ? `${opt.id}-${opt.label}` : opt.label} className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-sm transition hover:border-brand-300 dark:border-gray-800">
+                <input type="checkbox" checked={selectedMatkul.includes(opt.label)} onChange={(e)=>setSelectedMatkul((prev)=>e.target.checked?[...prev,opt.label]:prev.filter((x)=>x!==opt.label))} />
                 <span className="min-w-0 flex-1">
-                  <span className="block font-semibold text-gray-800 dark:text-white/90">{m}</span>
-                  <span className="text-xs text-gray-500">Mata kuliah konversi</span>
+                  <span className="block font-semibold text-gray-800 dark:text-white/90">{opt.label}</span>
+                  <span className="text-xs text-gray-500">{opt.kode ? `Kode: ${opt.kode}` : "Mata kuliah konversi"}</span>
                 </span>
-                <span className="font-semibold text-gray-800 dark:text-white/90">{getCourseCredits(m)} SKS</span>
+                <span className="font-semibold text-gray-800 dark:text-white/90">{opt.sks} SKS</span>
               </label>
             )) : <p className="text-sm text-gray-500">Belum ada pemetaan mata kuliah untuk Bidang ini.</p>}
           </div>
           <div className="mt-6 flex justify-end gap-3">
             <button type="button" onClick={()=>setSelected(null)} className="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 dark:border-gray-700 dark:text-gray-300">Batal</button>
-            <button type="button" onClick={()=>{
+            <button type="button" disabled={savingMatkul} onClick={async ()=>{
               if(!selectedMatkul.length){showFlash("error","Pilih minimal satu mata kuliah.");return;}
-              if(selectedTotalSks < selectedRange.min || selectedTotalSks > selectedRange.max){showFlash("error",`Total SKS harus berada pada rentang ${selectedRow.sks}.`);return;}
-              update(selectedRow.id,{mataKuliah:selectedMatkul,status:"Terkonversi",sks:String(selectedTotalSks)});
+              if(selectedRange.max > 0 && (selectedTotalSks < selectedRange.min || selectedTotalSks > selectedRange.max)){showFlash("error",`Total SKS harus berada pada rentang ${selectedRow.sks}.`);return;}
+
+              const selectedOpts = courseOptions.filter((opt) => selectedMatkul.includes(opt.label));
+              const selectedIds = selectedOpts.map((opt) => opt.id).filter((id) => id > 0);
+              let resolvedItems = selectedOpts.map((opt) => ({
+                id: opt.id,
+                kode_mk: opt.kode,
+                nama_mk: opt.label,
+                sks: opt.sks,
+              }));
+
+              if (getToken()) {
+                setSavingMatkul(true);
+                try {
+                  const res = await api.mahasiswa.pilihMataKuliah(
+                    selectedRow.id,
+                    selectedIds.length === selectedMatkul.length && selectedIds.length > 0
+                      ? { mata_kuliah_ids: selectedIds }
+                      : { mata_kuliah_names: selectedMatkul }
+                  );
+                  const returnedPmk = (res?.data as { pengajuan_mata_kuliahs?: Array<{ mata_kuliah_id?: number; sks_snapshot?: number; mata_kuliah?: { id?: number; kode_mk?: string; nama_mk?: string; sks?: number } }> })?.pengajuan_mata_kuliahs;
+                  if (Array.isArray(returnedPmk) && returnedPmk.length > 0) {
+                    resolvedItems = returnedPmk.map((pmk) => ({
+                      id: Number(pmk.mata_kuliah?.id ?? pmk.mata_kuliah_id ?? 0),
+                      kode_mk: pmk.mata_kuliah?.kode_mk,
+                      nama_mk: String(pmk.mata_kuliah?.nama_mk || ""),
+                      sks: Number(pmk.sks_snapshot ?? pmk.mata_kuliah?.sks ?? 0),
+                    }));
+                  }
+                } catch (err: unknown) {
+                  const e = err as { status?: number; message?: string };
+                  if (e?.status && e.status !== 404) {
+                    setSavingMatkul(false);
+                    showFlash("error", e.message || "Gagal menyimpan pilihan mata kuliah.");
+                    return;
+                  }
+                } finally {
+                  setSavingMatkul(false);
+                }
+              }
+
+              update(selectedRow.id,{
+                mataKuliah: resolvedItems.map((it) => it.nama_mk || selectedMatkul[0]),
+                mataKuliahItems: resolvedItems,
+                status:"Terkonversi",
+                sks:String(selectedTotalSks),
+              });
               setSelected(null);
-              showFlash("success","Pilihan mata kuliah berhasil disimpan. Menunggu penerbitan SK.");
-            }} className="rounded-lg bg-success-500 px-5 py-2.5 text-sm font-medium text-white">Simpan Pilihan</button>
+              showFlash("success","Pilihan mata kuliah berhasil disimpan. Notifikasi siap dibuatkan SK dikirim ke Tendik via Telegram.");
+            }} className="rounded-lg bg-success-500 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-60">{savingMatkul ? "Menyimpan..." : "Simpan Pilihan"}</button>
           </div>
         </>}
         {selectedRow.status === "Terkonversi" && <div className="mt-6 rounded-lg bg-success-50 p-4 text-sm text-success-700">
@@ -406,6 +509,9 @@ export function Profile({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [telegramChatId, setTelegramChatId] = useState(initialProfile.telegramChatId || "");
   const [telegramConnected, setTelegramConnected] = useState(Boolean(initialProfile.telegramConnected));
+  const [telegramDeepLink, setTelegramDeepLink] = useState("");
+  const [telegramBotUsername, setTelegramBotUsername] = useState("simpresmafasilkom_bot");
+  const [telegramBusy, setTelegramBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -425,6 +531,25 @@ export function Profile({
     sync();
     window.addEventListener("simpresma:profile-update", sync);
     return () => window.removeEventListener("simpresma:profile-update", sync);
+  }, [role]);
+
+  useEffect(() => {
+    if (!getToken()) return;
+    api.auth
+      .me()
+      .then((res) => {
+        const u = res?.data;
+        if (!u) return;
+        setTelegramConnected(Boolean(u.telegram_connected));
+        if (u.telegram_chat_id) {
+          setTelegramChatId(String(u.telegram_chat_id));
+        }
+        saveProfileForRole(role, {
+          telegramConnected: Boolean(u.telegram_connected),
+          telegramChatId: u.telegram_chat_id || "",
+        });
+      })
+      .catch(() => {});
   }, [role]);
 
   const showFlash = (type: "success" | "error", message: string) => {
@@ -564,15 +689,84 @@ export function Profile({
       if (getToken()) {
         try {
           await api.auth.connectTelegram(telegramChatId.trim());
-        } catch {
-          // Allow local state sync if offline
+        } catch (err: unknown) {
+          const e = err as { status?: number; message?: string };
+          if (e?.status && e.status !== 401) {
+            showFlash("error", e.message || "Gagal menghubungkan Telegram Chat ID.");
+            return;
+          }
         }
       }
       setTelegramConnected(true);
+      setTelegramDeepLink("");
       saveProfileForRole(role, { telegramConnected: true, telegramChatId: telegramChatId.trim() });
       showFlash("success", "Bot Telegram berhasil dihubungkan.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleAutoLinkTelegram = async () => {
+    if (!getToken()) {
+      window.open(`https://t.me/${telegramBotUsername}`, "_blank", "noopener,noreferrer");
+      showFlash("success", `Buka @${telegramBotUsername} lalu ketik /start untuk mendapatkan Chat ID Anda.`);
+      return;
+    }
+
+    setTelegramBusy(true);
+    try {
+      const res = await api.auth.createTelegramLinkToken();
+      if (res?.data?.deep_link) {
+        setTelegramDeepLink(res.data.deep_link);
+        setTelegramBotUsername(res.data.bot_username || "simpresmafasilkom_bot");
+        window.open(res.data.deep_link, "_blank", "noopener,noreferrer");
+        showFlash("success", "Tab Telegram dibuka. Klik Start di bot lalu tekan Cek Koneksi.");
+      }
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      showFlash("error", e.message || "Gagal membuat tautan penghubung Telegram.");
+    } finally {
+      setTelegramBusy(false);
+    }
+  };
+
+  const handleCheckTelegramLink = async () => {
+    if (!getToken()) return;
+    setTelegramBusy(true);
+    try {
+      const res = await api.auth.checkTelegramLink();
+      if (res?.connected) {
+        const chatId = res.data?.telegram_chat_id || "";
+        setTelegramConnected(true);
+        setTelegramChatId(chatId);
+        setTelegramDeepLink("");
+        saveProfileForRole(role, { telegramConnected: true, telegramChatId: chatId });
+        showFlash("success", "Akun Telegram berhasil terhubung otomatis!");
+      } else {
+        showFlash("error", "Belum terdeteksi klik Start di bot Telegram. Silakan coba lagi.");
+      }
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      showFlash("error", e.message || "Gagal memeriksa status koneksi Telegram.");
+    } finally {
+      setTelegramBusy(false);
+    }
+  };
+
+  const handleTestTelegram = async () => {
+    if (!getToken()) {
+      showFlash("error", "Login terlebih dahulu untuk menguji pengiriman pesan Telegram asli.");
+      return;
+    }
+    setTelegramBusy(true);
+    try {
+      const res = await api.auth.testTelegram();
+      showFlash("success", res?.message || "Pesan tes berhasil dikirim ke Telegram Anda.");
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      showFlash("error", e.message || "Gagal mengirim pesan tes Telegram.");
+    } finally {
+      setTelegramBusy(false);
     }
   };
 
@@ -588,6 +782,7 @@ export function Profile({
       }
       setTelegramConnected(false);
       setTelegramChatId("");
+      setTelegramDeepLink("");
       saveProfileForRole(role, { telegramConnected: false, telegramChatId: "" });
       showFlash("success", "Koneksi Telegram diputuskan.");
     } finally {
@@ -773,30 +968,71 @@ export function Profile({
             </span>
           </div>
           <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
-            Hubungkan Chat ID Telegram Anda untuk menerima pembaruan status pengajuan prestasi & SK konversi secara real-time.
+            Hubungkan Telegram Anda ke{" "}
+            <a
+              href={`https://t.me/${telegramBotUsername}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-brand-500 underline"
+            >
+              @{telegramBotUsername}
+            </a>{" "}
+            untuk menerima notifikasi pengajuan baru, keputusan verifikator, konversi MK, dan SK final.
           </p>
-          <div className="mt-4 space-y-4">
+          <div className="mt-4 space-y-3">
+            {!telegramConnected && (
+              <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/50">
+                <button
+                  type="button"
+                  disabled={saving || telegramBusy}
+                  onClick={handleAutoLinkTelegram}
+                  className="min-h-[44px] w-full rounded-lg border border-brand-500 bg-white px-4 py-2 text-sm font-semibold text-brand-600 transition hover:bg-brand-50 disabled:opacity-60 dark:bg-gray-900 dark:text-brand-400 dark:hover:bg-brand-500/10"
+                >
+                  {telegramBusy ? "Menyiapkan tautan..." : "Hubungkan Otomatis via Bot"}
+                </button>
+                {telegramDeepLink && (
+                  <button
+                    type="button"
+                    disabled={telegramBusy}
+                    onClick={handleCheckTelegramLink}
+                    className="min-h-[44px] w-full rounded-lg bg-success-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-success-600 disabled:opacity-60"
+                  >
+                    Cek Status Koneksi
+                  </button>
+                )}
+              </div>
+            )}
             <Input
               label="Telegram Chat ID"
               value={telegramChatId}
               onChange={(e) => setTelegramChatId(e.target.value)}
-              placeholder="Contoh: 123456789"
+              placeholder="Ketik /start di bot lalu salin Chat ID"
             />
             {telegramConnected ? (
-              <button
-                type="button"
-                disabled={saving}
-                onClick={handleDisconnectTelegram}
-                className="min-h-[44px] w-full rounded-lg border border-error-200 px-4 py-2 text-sm font-medium text-error-600 hover:bg-error-50 dark:border-error-800 dark:text-error-400"
-              >
-                Putuskan Koneksi Telegram
-              </button>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled={saving || telegramBusy}
+                  onClick={handleTestTelegram}
+                  className="min-h-[44px] w-full rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-600 disabled:opacity-60"
+                >
+                  {telegramBusy ? "Mengirim..." : "Kirim Pesan Tes Telegram"}
+                </button>
+                <button
+                  type="button"
+                  disabled={saving || telegramBusy}
+                  onClick={handleDisconnectTelegram}
+                  className="min-h-[44px] w-full rounded-lg border border-error-200 px-4 py-2 text-sm font-medium text-error-600 hover:bg-error-50 dark:border-error-800 dark:text-error-400"
+                >
+                  Putuskan Koneksi Telegram
+                </button>
+              </div>
             ) : (
               <button
                 type="button"
-                disabled={saving}
+                disabled={saving || telegramBusy}
                 onClick={handleConnectTelegram}
-                className="min-h-[44px] w-full rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600"
+                className="min-h-[44px] w-full rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-60"
               >
                 Hubungkan Telegram
               </button>

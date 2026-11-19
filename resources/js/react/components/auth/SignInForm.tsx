@@ -63,6 +63,7 @@ export default function SignInForm() {
             whatsapp: user.no_whatsapp || undefined,
             avatar: user.avatar || undefined,
             telegramConnected: user.telegram_connected || false,
+            telegramChatId: user.telegram_chat_id || "",
           },
           primaryRole
         );

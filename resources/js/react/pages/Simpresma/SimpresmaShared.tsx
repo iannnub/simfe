@@ -46,7 +46,16 @@ export type Prestasi = {
   skUrl?: string;
   dokumen?: string[];
   dokumenUrls?: Record<string, string>;
+  bidangId?: number;
+  prodiId?: number;
   mataKuliah?: string[];
+  mataKuliahItems?: Array<{
+    id: number;
+    kode_mk?: string;
+    nama_mk: string;
+    sks: number;
+    huruf_nilai?: string | null;
+  }>;
   nilai?: string[];
   sks?: string;
 };
@@ -277,6 +286,8 @@ const studentDemoPrestasi: Prestasi[] = [
 
 export interface BackendPengajuanItem {
   id: number;
+  bidang_id?: number;
+  prodi_id?: number;
   nama_lomba?: string;
   nama_tim?: string;
   status?: string;
@@ -291,31 +302,72 @@ export interface BackendPengajuanItem {
   snapshot_min_sks?: number | string;
   snapshot_max_sks?: number | string;
   mahasiswa?: { nama?: string; name?: string; nim_nip?: string };
-  prodi?: { nama?: string };
-  bidang?: { nama?: string };
+  prodi?: { id?: number; nama?: string };
+  bidang?: { id?: number; nama?: string };
   tingkatan?: { nama?: string };
   tahapan?: { nama?: string };
-  pengajuan_mata_kuliahs?: Array<{ mata_kuliah?: { nama_mk?: string }; nama_mk?: string }>;
+  mata_kuliahs?: Array<{
+    id: number;
+    kode_mk?: string;
+    nama_mk?: string;
+    sks?: number;
+    pivot?: { sks_snapshot?: number; huruf_nilai?: string | null };
+  }>;
+  pengajuan_mata_kuliahs?: Array<{
+    mata_kuliah_id?: number;
+    sks_snapshot?: number;
+    huruf_nilai?: string | null;
+    mata_kuliah?: { id?: number; kode_mk?: string; nama_mk?: string; sks?: number };
+    nama_mk?: string;
+  }>;
 }
 
 export function mapBackendPengajuanToPrestasi(item: BackendPengajuanItem): Prestasi {
+  const mataKuliahItems = Array.isArray(item.pengajuan_mata_kuliahs) && item.pengajuan_mata_kuliahs.length > 0
+    ? item.pengajuan_mata_kuliahs
+        .map((pmk) => ({
+          id: Number(pmk.mata_kuliah?.id ?? pmk.mata_kuliah_id ?? 0),
+          kode_mk: pmk.mata_kuliah?.kode_mk,
+          nama_mk: pmk.mata_kuliah?.nama_mk || pmk.nama_mk || "",
+          sks: Number(pmk.sks_snapshot ?? pmk.mata_kuliah?.sks ?? 0),
+          huruf_nilai: pmk.huruf_nilai ?? null,
+        }))
+        .filter((mk) => mk.nama_mk)
+    : Array.isArray(item.mata_kuliahs)
+      ? item.mata_kuliahs
+          .map((mk) => ({
+            id: Number(mk.id),
+            kode_mk: mk.kode_mk,
+            nama_mk: mk.nama_mk || "",
+            sks: Number(mk.pivot?.sks_snapshot ?? mk.sks ?? 0),
+            huruf_nilai: mk.pivot?.huruf_nilai ?? null,
+          }))
+          .filter((mk) => mk.nama_mk)
+      : [];
+
+  const rawStatus = item.status?.toLowerCase() || "";
   const statusMap: Record<string, Status> = {
     pending: "Pending",
-    diterima: "Diterima",
+    diterima: mataKuliahItems.length > 0 ? "Terkonversi" : "Diterima",
     ditolak: "Ditolak",
     selesai: "Terkonversi",
   };
+  const mappedStatus = statusMap[rawStatus] || "Pending";
+  const selectedSksTotal = mataKuliahItems.reduce((sum, mk) => sum + (mk.sks || 0), 0);
+
   return {
     id: item.id,
+    bidangId: item.bidang_id ?? item.bidang?.id,
+    prodiId: item.prodi_id ?? item.prodi?.id,
     mahasiswa: item.mahasiswa?.nama || item.mahasiswa?.name || "Mahasiswa",
     nim: item.mahasiswa?.nim_nip || "-",
-    prodi: (item.prodi?.nama || "Sistem Informasi") as Prodi,
+    prodi: (item.prodi?.nama || "Sistem Informasi") as Prestasi["prodi"],
     lomba: item.nama_lomba || "-",
     bidang: item.bidang?.nama || "-",
     tingkatan: item.tingkatan?.nama || "-",
     tahapan: item.tahapan?.nama || "-",
     jenis: item.nama_tim ? "Kelompok" : "Individu",
-    status: statusMap[item.status?.toLowerCase() || ""] || "Pending",
+    status: mappedStatus,
     tanggal: item.created_at
       ? new Date(item.created_at).toLocaleDateString("id-ID", {
           day: "numeric",
@@ -324,8 +376,8 @@ export function mapBackendPengajuanToPrestasi(item: BackendPengajuanItem): Prest
         })
       : "-",
     feedback: item.feedback_verifikator,
-    skDisahkan: item.status?.toLowerCase() === "selesai",
-    skUploaded: Boolean(item.link_sk_konversi),
+    skDisahkan: rawStatus === "selesai",
+    skUploaded: rawStatus === "selesai" && Boolean(item.link_sk_konversi),
     skFileName: item.link_sk_konversi ? "SK_Konversi_Resmi.pdf" : undefined,
     skUrl: item.link_sk_konversi || undefined,
     dokumen: [
@@ -340,11 +392,15 @@ export function mapBackendPengajuanToPrestasi(item: BackendPengajuanItem): Prest
       ...(item.link_surat_tugas_dosen ? { "Surat_Tugas_Dosen.pdf": item.link_surat_tugas_dosen } : {}),
       ...(item.link_poster ? { "Poster_Lomba.pdf": item.link_poster } : {}),
     },
-    mataKuliah: Array.isArray(item.pengajuan_mata_kuliahs)
-      ? (item.pengajuan_mata_kuliahs.map((pmk) => pmk.mata_kuliah?.nama_mk || pmk.nama_mk).filter(Boolean) as string[])
-      : [],
+    mataKuliah: mataKuliahItems.map((mk) => mk.nama_mk),
+    mataKuliahItems,
     nilai: item.snapshot_huruf_nilai ? [item.snapshot_huruf_nilai] : [],
-    sks: item.snapshot_min_sks ? `${item.snapshot_min_sks}–${item.snapshot_max_sks}` : undefined,
+    sks:
+      mappedStatus === "Terkonversi" && selectedSksTotal > 0
+        ? String(selectedSksTotal)
+        : item.snapshot_min_sks
+          ? `${item.snapshot_min_sks}–${item.snapshot_max_sks}`
+          : undefined,
   };
 }
 
@@ -378,9 +434,9 @@ export function usePrestasi() {
         if (role === "Mahasiswa") {
           res = await api.mahasiswa.getPengajuan({ per_page: 50 });
         } else if (role === "Verifikator") {
-          res = await api.verifikator.getPengajuan({ per_page: 50 });
+          res = await api.verifikator.getPengajuan({ per_page: 50, status: "all" });
         } else if (role === "Tendik") {
-          res = await api.tendik.getPengajuan({ per_page: 50 });
+          res = await api.tendik.getPengajuan({ per_page: 50, status: "all" });
         } else if (role === "Kaprodi" || role === "Wadek") {
           res = await api.kaprodi.getPengajuan({ per_page: 50 });
         } else {
@@ -457,7 +513,12 @@ export function usePrestasi() {
     const token = getToken();
     if (token) {
       if (patch.status === "Diterima") {
-        api.verifikator.terima(id, patch.feedback).catch(() => {});
+        api.verifikator
+          .terima(id, patch.feedback, {
+            bidang_id: patch.bidangId,
+            bidang_nama: patch.bidang && patch.bidang !== "-" ? patch.bidang : undefined,
+          })
+          .catch(() => {});
       } else if (patch.status === "Ditolak") {
         api.verifikator.tolak(id, patch.feedback || "Ditolak").catch(() => {});
       }

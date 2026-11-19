@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import DropdownSelect from "../../components/form/DropdownSelect";
+import api, { getToken } from "../../services/api";
 import { getConversionMatrix, loadBidangMapping, masterCoursesByProdi } from "./SimpresmaMatrix";
 import {
   Card,
@@ -29,7 +30,22 @@ function VerificationList({
   const [bidang, setBidang] = useState("");
   const [previewDoc, setPreviewDoc] = useState<string | null>(null);
   const [decisionLoading, setDecisionLoading] = useState(false);
+  const [backendBidangs, setBackendBidangs] = useState<Array<{ id: number; nama: string }>>([]);
   const [flash, setFlash] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  useEffect(() => {
+    if (!getToken()) return;
+    api.ref
+      .bidang()
+      .then((res) => {
+        if (Array.isArray(res?.data)) {
+          setBackendBidangs(
+            res.data.map((b) => ({ id: Number(b.id), nama: String(b.nama || "") })).filter((b) => b.nama)
+          );
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   let rows = data.filter((r) => !prodiFilter || r.prodi === prodiFilter);
 
@@ -73,18 +89,22 @@ function VerificationList({
     }
 
     const matrix = getConversionMatrix(r.tingkatan, r.tahapan);
+    const matchedBidang = backendBidangs.find((b) => b.nama === bidang);
     setDecisionLoading(true);
 
     window.setTimeout(() => {
       update(r.id, {
         status: "Diterima",
         bidang,
+        bidangId: matchedBidang?.id ?? r.bidangId,
+        feedback: feedback.trim() || undefined,
         sks: matrix?.sks ?? "-",
         nilai: matrix?.nilai && matrix.nilai !== "-" ? [matrix.nilai] : [],
       });
       setDecisionLoading(false);
+      setFeedback("");
       setSelected(null);
-      showFlash("success", "Pengajuan berhasil disetujui. SKS dan Nilai ditetapkan otomatis berdasarkan matriks konversi.");
+      showFlash("success", "Pengajuan berhasil disetujui. Notifikasi Telegram dikirim ke mahasiswa.");
     }, 250);
   };
 
@@ -200,7 +220,12 @@ function VerificationList({
                 placeholder="Pilih bidang"
                 options={[
                   { value: "", label: "Pilih bidang" },
-                  ...Object.keys(loadBidangMapping()).map((item) => ({ value: item, label: item })),
+                  ...Array.from(
+                    new Set([
+                      ...backendBidangs.map((b) => b.nama),
+                      ...Object.keys(loadBidangMapping()),
+                    ])
+                  ).map((item) => ({ value: item, label: item })),
                 ]}
               />
               </label>

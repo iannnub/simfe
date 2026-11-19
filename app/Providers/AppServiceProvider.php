@@ -2,10 +2,12 @@
 
 namespace App\Providers;
 
+use App\Events\MataKuliahKonversiSelected;
 use App\Events\PengajuanStatusChanged;
 use App\Events\PengajuanSubmitted;
 use App\Listeners\SendNewPengajuanNotification;
 use App\Listeners\SendTelegramNotification;
+use App\Listeners\SendTendikSiapSkNotification;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
@@ -21,6 +23,7 @@ class AppServiceProvider extends ServiceProvider
         // Telegram notification event listeners
         Event::listen(PengajuanStatusChanged::class, SendTelegramNotification::class);
         Event::listen(PengajuanSubmitted::class, SendNewPengajuanNotification::class);
+        Event::listen(MataKuliahKonversiSelected::class, SendTendikSiapSkNotification::class);
 
         // Security: Rate Limiters
         RateLimiter::for('api', function (Request $request) {

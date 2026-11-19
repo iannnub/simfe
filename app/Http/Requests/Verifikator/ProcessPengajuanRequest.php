@@ -14,6 +14,15 @@ class ProcessPengajuanRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if (!$this->filled('feedback_verifikator') && $this->filled('feedback')) {
+            $this->merge([
+                'feedback_verifikator' => $this->input('feedback'),
+            ]);
+        }
+    }
+
     /**
      * Aturan validasi:
      * - feedback_verifikator: wajib diisi dan tidak boleh kosong jika aksi = 'tolak'

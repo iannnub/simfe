@@ -36,8 +36,10 @@ return [
     ],
 
     'telegram' => [
-        'bot_token'    => env('TELEGRAM_BOT_TOKEN'),
-        'bot_username' => env('TELEGRAM_BOT_USERNAME', 'simpresma_unej_bot'),
+        'bot_token'      => env('TELEGRAM_BOT_TOKEN'),
+        'bot_username'   => env('TELEGRAM_BOT_USERNAME', 'simpresmafasilkom_bot'),
+        'webhook_url'    => env('TELEGRAM_WEBHOOK_URL'),
+        'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET'),
     ],
 
     'gapura' => [
